@@ -1,7 +1,7 @@
 """Econometrics Router."""
 import re
 from itertools import combinations
-from typing import Dict, List, Literal
+from typing import Dict, List, Literal, Optional
 
 import numpy as np
 import pandas as pd
@@ -16,11 +16,18 @@ from linearmodels.panel import (
 )
 from openbb_core.app.model.obbject import OBBject
 from openbb_core.app.router import Router
-from openbb_core.app.utils import basemodel_to_df, get_target_column, get_target_columns
+from openbb_core.app.utils import (
+    basemodel_to_df,
+    df_to_basemodel,
+    get_target_column,
+    get_target_columns,
+)
 from openbb_core.provider.abstract.data import Data
 from pydantic import PositiveInt
 from statsmodels.stats.diagnostic import acorr_breusch_godfrey  # type: ignore
+from statsmodels.stats.outliers_influence import variance_inflation_factor as vif
 from statsmodels.stats.stattools import durbin_watson  # type: ignore
+from statsmodels.tools.tools import add_constant
 from statsmodels.tsa.stattools import adfuller, grangercausalitytests  # type: ignore
 
 from openbb_econometrics.utils import get_engle_granger_two_step_cointegration_test
@@ -515,3 +522,56 @@ def panel_fmac(
     exogenous = sm.add_constant(X)
     results = FamaMacBeth(y, exogenous).fit()
     return OBBject(results={"results": results})
+
+
+@router.command(methods=["POST"], include_in_schema=False)
+def variance_inflation_factor(
+    data: List[Data], columns: Optional[list] = None
+) -> OBBject[Dict]:
+    r"""Calculates VIF (variance inflation factor), which tests collinearity.
+
+    It quantifies the severity of multicollinearity in an ordinary least squares regression analysis. The square
+    root of the variance inflation factor indicates how much larger the standard error increases compared to if
+    that variable had 0 correlation to other predictor variables in the model.
+
+    It is defined as:
+
+    $ VIF_i = 1 / (1 - R_i^2) $
+    where $ R_i $ is the coefficient of determination of the regression equation with the column i being the result
+    from the i:th series being the exogenous variable.
+
+    A VIF over 5 indicates a high collinearity and correlation. Values over 10 indicates causes problems, while a
+    value of 1 indicates no correlation. Thus VIF values between 1 and 5 are most commonly considered acceptable.
+    In order to improve the results one can often remove a column with high VIF.
+
+    For further information see: https://en.wikipedia.org/wiki/Variance_inflation_factor
+
+    Parameters
+    ----------
+    dataset: List[Data]
+        Dataset to calculate VIF on
+    columns: Optional[list]
+        The columns to calculate to test for collinearity
+
+    Returns
+    -------
+    OBBject
+        The resulting VIF values for the selected columns
+    """
+
+    # Convert to pandas dataframe
+    dataset = basemodel_to_df(data)
+
+    # Add a constant
+    df = add_constant(dataset if columns is None else dataset[columns])
+
+    # Remove date and string type because VIF doesn't work for these types
+    df = df.select_dtypes(exclude=["object", "datetime", "timedelta"])
+
+    # Calculate the VIF values
+    vif_values = {}
+    for i in range(len(df.columns))[1:]:
+        vif_values[f"{df.columns[i]}"] = vif(df.values, i)
+
+    results = df_to_basemodel(pd.DataFrame(vif_values, index=[0]))
+    return OBBject(results=results)
