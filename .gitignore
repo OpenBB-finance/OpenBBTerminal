@@ -84,3 +84,16 @@ lightning_logs/
 
 # Platform auto generated files
 openbb_platform/openbb/package/*
+
+# Markdown generated files for Platform
+website/content/platform/reference/*
+website/content/platform/data_models/*
+
+# Markdown generated files for SDK
+website/content/sdk/reference/*
+
+# Markdown generated files for Pro
+website/content/pro/widgets-library/*
+
+# Markdown generated files for Terminal
+website/content/terminal/reference/*
