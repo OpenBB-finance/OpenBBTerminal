@@ -5,12 +5,12 @@ import pandas as pd
 import pytest
 
 # IMPORTATION INTERNAL
-from openbb_terminal.cryptocurrency.defi import coindix_model
+from openbb_terminal.cryptocurrency.defi import nanoly_model
 
 
 @pytest.mark.vcr
 def test_get_defi_vaults(recorder):
-    df = coindix_model.get_defi_vaults(
+    df = nanoly_model.get_defi_vaults(
         chain=None,
         protocol=None,
         kind=None,
@@ -31,7 +31,7 @@ def test_get_defi_vaults_no_data(mocker):
         new=mocker.Mock(return_value=mock_response),
     )
 
-    df = coindix_model.get_defi_vaults(
+    df = nanoly_model.get_defi_vaults(
         chain=None,
         protocol=None,
         kind=None,
