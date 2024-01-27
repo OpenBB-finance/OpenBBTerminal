@@ -8,13 +8,11 @@ from jose.exceptions import ExpiredSignatureError
 from jose.jwt import decode, get_unverified_header
 from openbb_core.app.model.abstract.error import OpenBBError
 from openbb_core.app.model.credentials import Credentials
-from openbb_core.app.model.hub.features_keys import FeaturesKeys
 from openbb_core.app.model.hub.hub_session import HubSession
 from openbb_core.app.model.hub.hub_user_settings import HubUserSettings
 from openbb_core.app.model.profile import Profile
 from openbb_core.app.model.user_settings import UserSettings
 from openbb_core.env import Env
-from pydantic import SecretStr
 from requests import get, post, put
 
 
@@ -30,6 +28,7 @@ class HubService:
     ):
         self._base_url = base_url or Env().HUB_BACKEND
         self._session = session
+        self._hub_user_settings: Optional[HubUserSettings] = None
 
     @property
     def base_url(self) -> str:
@@ -80,13 +79,10 @@ class HubService:
     def pull(self) -> UserSettings:
         """Pull user settings from Hub."""
         if self._session:
-            hub_user_settings = self._get_user_settings(self._session)
-            if hub_user_settings:
-                profile = Profile(
-                    hub_session=self._session,
-                )
-                credentials = self.hub2platform(hub_user_settings)
-                return UserSettings(profile=profile, credentials=credentials)
+            self._hub_user_settings = self._get_user_settings(self._session)
+            profile = Profile(hub_session=self._session)
+            credentials = self.hub2platform(self._hub_user_settings)
+            return UserSettings(profile=profile, credentials=credentials)
         raise OpenBBError(
             "No session found. Login or provide a 'HubSession' on initialization."
         )
@@ -215,44 +211,32 @@ class HubService:
         detail = response.json().get("detail", None)
         raise HTTPException(status_code, detail)
 
-    @classmethod
-    def hub2platform(cls, settings: HubUserSettings) -> Credentials:
+    def hub2platform(self, settings: HubUserSettings) -> Credentials:
         """Convert Hub user settings to Platform models."""
-        # TODO: Hub is getting credentials from `all_api_keys.json`, which uses
-        # the terminal names conventions. We need to update it to use a file that
-        # lives here in the platform and maps the credential names between the two.
-        credentials = Credentials(
-            alpha_vantage_api_key=settings.features_keys.API_KEY_ALPHAVANTAGE,
-            biztoc_api_key=settings.features_keys.API_BIZTOC_TOKEN,
-            fred_api_key=settings.features_keys.API_FRED_KEY,
-            fmp_api_key=settings.features_keys.API_KEY_FINANCIALMODELINGPREP,
-            intrinio_api_key=settings.features_keys.API_INTRINIO_KEY,
-            polygon_api_key=settings.features_keys.API_POLYGON_KEY,
-            nasdaq_api_key=settings.features_keys.API_KEY_QUANDL,
-            ultima_api_key=settings.features_keys.API_ULTIMA_KEY,
-        )
-        return credentials
+        V3TOV4 = {
+            "API_KEY_ALPHAVANTAGE": "alpha_vantage_api_key",
+            "API_BIZTOC_TOKEN": "biztoc_api_key",
+            "API_FRED_KEY": "fred_api_key",
+            "API_KEY_FINANCIALMODELINGPREP": "fmp_api_key",
+            "API_INTRINIO_KEY": "intrinio_api_key",
+            "API_POLYGON_KEY": "polygon_api_key",
+            "API_KEY_QUANDL": "nasdaq_api_key",
+            "API_ULTIMA_KEY": "ultima_api_key",
+        }
+        # We give priority to V4 keys over V3 keys if both are present
+        hub_credentials = {
+            V3TOV4.get(k, k): settings.features_keys.get(V3TOV4.get(k, k), v)
+            for k, v in settings.features_keys.items()
+        }
+        return Credentials(**hub_credentials)
 
-    @classmethod
-    def platform2hub(cls, credentials: Credentials) -> HubUserSettings:
+    def platform2hub(self, credentials: Credentials) -> HubUserSettings:
         """Convert Platform models to Hub user settings."""
-
-        def get_cred(cred: str) -> Optional[str]:
-            secret_str: Optional[SecretStr] = getattr(credentials, cred, None)
-            return secret_str.get_secret_value() if secret_str else None
-
-        features_keys = FeaturesKeys(
-            API_BIZTOC_TOKEN=get_cred("biztoc_api_key"),
-            API_FRED_KEY=get_cred("fred_api_key"),
-            API_INTRINIO_KEY=get_cred("intrinio_api_key"),
-            API_KEY_ALPHAVANTAGE=get_cred("alpha_vantage_api_key"),
-            API_KEY_FINANCIALMODELINGPREP=get_cred("fmp_api_key"),
-            API_POLYGON_KEY=get_cred("polygon_api_key"),
-            API_KEY_QUANDL=get_cred("nasdaq_api_key"),
-            API_ULTIMA_KEY=get_cred("ultima_api_key"),
-        )
-        hub_user_settings = HubUserSettings(features_keys=features_keys)
-        return hub_user_settings
+        feature_keys = credentials.model_dump(mode="json", exclude_none=True)
+        # We update the fetched feature keys with the existing credentials
+        settings = self._hub_user_settings or HubUserSettings()
+        settings.features_keys.update(feature_keys)
+        return settings
 
     @staticmethod
     def check_token_expiration(token: str) -> None:
