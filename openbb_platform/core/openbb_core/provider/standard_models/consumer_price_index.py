@@ -14,59 +14,50 @@ from openbb_core.provider.utils.descriptions import (
 )
 from openbb_core.provider.utils.helpers import check_item
 
-CPI_COUNTRIES = [
-    "australia",
-    "austria",
-    "belgium",
-    "brazil",
-    "bulgaria",
-    "canada",
+CPI_STANDARD_COUNTRIES = [
+    "israel",
+    "portugal",
     "chile",
-    "china",
-    "croatia",
-    "cyprus",
+    "finland",
+    "japan",
     "czech_republic",
     "denmark",
+    "poland",
+    "indonesia",
+    "italy",
+    "spain",
+    "korea",
+    "iceland",
+    "slovak_republic",
+    "latvia",
+    "turkey",
+    "hungary",
+    "united_kingdom",
+    "india",
+    "norway",
+    "australia",
     "estonia",
-    "euro_area",
-    "finland",
-    "france",
+    "netherlands",
     "germany",
     "greece",
-    "hungary",
-    "iceland",
-    "india",
-    "indonesia",
-    "ireland",
-    "israel",
-    "italy",
-    "japan",
-    "korea",
-    "latvia",
+    "china",
     "lithuania",
+    "united_states",
     "luxembourg",
-    "malta",
-    "mexico",
-    "netherlands",
-    "new_zealand",
-    "norway",
-    "poland",
-    "portugal",
-    "romania",
-    "russian_federation",
-    "slovak_republic",
-    "slovakia",
-    "slovenia",
-    "south_africa",
-    "spain",
+    "france",
     "sweden",
     "switzerland",
-    "turkey",
-    "united_kingdom",
-    "united_states",
+    "slovenia",
+    "mexico",
+    "new_zealand",
+    "canada",
+    "austria",
+    "belgium",
+    "ireland",
+    "brazil",
+    "south_africa",
 ]
 
-CPI_UNITS = Literal["growth_previous", "growth_same", "index_2015"]
 
 CPI_FREQUENCY = Literal["monthly", "quarter", "annual"]
 
@@ -76,18 +67,12 @@ class ConsumerPriceIndexQueryParams(QueryParams):
 
     country: str = Field(
         description=QUERY_DESCRIPTIONS.get("country"),
-        choices=CPI_COUNTRIES,  # type: ignore
+        default="united_states",
+        choices=CPI_STANDARD_COUNTRIES,  # type: ignore
     )
-    units: CPI_UNITS = Field(
-        default="growth_same",
-        description=QUERY_DESCRIPTIONS.get("units", "")
-        + """
-    Options:
-    - `growth_previous`: Percent growth from the previous period.
-      If monthly data, this is month-over-month, etc
-    - `growth_same`: Percent growth from the same period in the previous year.
-      If looking at monthly data, this would be year-over-year, etc.
-    - `index_2015`: Rescaled index value, such that the value in 2015 is 100.""",
+    units: Literal["index", "yoy", "mom"] = Field(
+        description="Units to get CPI for. Either index, month over month or year over year. Defaults to year over year.",
+        default="yoy",
     )
     frequency: CPI_FREQUENCY = Field(
         default="monthly",
@@ -111,7 +96,7 @@ class ConsumerPriceIndexQueryParams(QueryParams):
         result = []
         values = c.replace(" ", "_").split(",")
         for v in values:
-            check_item(v.lower(), CPI_COUNTRIES)
+            check_item(v.lower(), CPI_STANDARD_COUNTRIES)
             result.append(v.lower())
         return ",".join(result)
 
