@@ -35,15 +35,17 @@ class FMPEtfInfoData(EtfInfoData):
     )
     aum: Optional[float] = Field(default=None, description="Assets under management.")
     nav: Optional[float] = Field(
-        default=None, description="Net asset value of the ETF."
+        description="Net asset value of the ETF.", default=None
     )
-    nav_currency: Optional[str] = Field(
-        default=None, description="Currency of the ETF's net asset value."
+    currency: Optional[str] = Field(
+        alias="navCurrency",
+        description="Currency of the ETF's net asset value.",
+        default=None,
     )
     expense_ratio: Optional[float] = Field(
         default=None,
         description="The expense ratio, as a normalized percent.",
-        json_schema_extra={"unit_measurement": "percent", "frontend_multiply": 100},
+        json_schema_extra={"x-unit_measurement": "percent", "x-frontend_multiply": 100},
     )
     holdings_count: Optional[int] = Field(
         default=None, description="Number of holdings."

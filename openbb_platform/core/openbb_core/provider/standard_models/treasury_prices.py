@@ -41,10 +41,11 @@ class TreasuryPricesData(Data):
     )
     issue_date: Optional[dateType] = Field(
         default=None,
-        description="The original issue date of the security.",
+        description="The original issue date of the security, as a normalized percent.",
     )
     maturity_date: Optional[dateType] = Field(
         default=None,
+        json_schema_extra={"x-unit_measurement": "percent", "x-frontend_multiply": 100},
         description="The maturity date of the security.",
     )
     call_date: Optional[dateType] = Field(

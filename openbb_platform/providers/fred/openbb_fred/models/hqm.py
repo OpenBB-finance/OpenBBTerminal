@@ -13,7 +13,7 @@ from openbb_fred.utils.fred_helpers import (
     YIELD_CURVE_SERIES_CORPORATE_PAR,
     YIELD_CURVE_SERIES_CORPORATE_SPOT,
 )
-from pydantic import Field, field_validator
+from pydantic import Field
 
 
 class FREDHighQualityMarketCorporateBondQueryParams(
@@ -28,15 +28,6 @@ class FREDHighQualityMarketCorporateBondData(HighQualityMarketCorporateBondData)
     __alias_dict__ = {"rate": "value"}
 
     series_id: str = Field(description="FRED series id.")
-
-    @field_validator("rate", mode="before", check_fields=False)
-    @classmethod
-    def value_validate(cls, v):
-        """Validate rate."""
-        try:
-            return float(v)
-        except ValueError:
-            return None
 
 
 class FREDHighQualityMarketCorporateBondFetcher(
@@ -95,7 +86,11 @@ class FREDHighQualityMarketCorporateBondFetcher(
                     "maturity": maturity,
                     "yield_curve": query.yield_curve,
                     "date": observation["date"],
-                    "value": observation["value"],
+                    "value": (
+                        float(observation["value"]) / 100
+                        if observation["value"] and observation["value"] != "."
+                        else None
+                    ),
                 }
                 data.append(series_data)
 

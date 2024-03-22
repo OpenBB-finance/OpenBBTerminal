@@ -23,16 +23,15 @@ class FederalReserveFEDData(FEDData):
 
     @field_validator("rate", mode="before", check_fields=False)
     @classmethod
-    def value_validate(cls, v):
-        """Validate rate."""
-        try:
-            return float(v)
-        except ValueError:
+    def normalize_percent(cls, v):
+        """Normalize percent."""
+        if v and isinstance(v, str) and v == ".":
             return None
+        return float(v) / 100 if v else None
 
 
 class FederalReserveFEDFetcher(
-    Fetcher[FederalReserveFEDQueryParams, List[Dict[str, List[FederalReserveFEDData]]]]
+    Fetcher[FederalReserveFEDQueryParams, List[FederalReserveFEDData]]
 ):
     """FederalReserve FED Model."""
 
@@ -77,7 +76,7 @@ class FederalReserveFEDFetcher(
     @staticmethod
     def transform_data(
         query: FederalReserveFEDQueryParams, data: dict, **kwargs: Any
-    ) -> List[Dict[str, List[FederalReserveFEDData]]]:
+    ) -> List[FederalReserveFEDData]:
         """Transform data."""
 
         return [FederalReserveFEDData.model_validate(d) for d in data]

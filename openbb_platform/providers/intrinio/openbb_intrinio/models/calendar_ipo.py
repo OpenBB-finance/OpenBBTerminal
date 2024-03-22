@@ -128,6 +128,7 @@ class IntrinioCalendarIpoData(CalendarIpoData):
             "(only available for priced IPOs)."
         ),
         default=None,
+        json_schema_extra={"x-unit_measurement": "percent", "x-frontend_multiply": 100},
     )
     week_change: Optional[float] = Field(
         description=(
@@ -135,6 +136,7 @@ class IntrinioCalendarIpoData(CalendarIpoData):
             "a week after the first trading day (only available for priced IPOs)."
         ),
         default=None,
+        json_schema_extra={"x-unit_measurement": "percent", "x-frontend_multiply": 100},
     )
     month_change: Optional[float] = Field(
         description=(
@@ -142,6 +144,7 @@ class IntrinioCalendarIpoData(CalendarIpoData):
             "a month after the first trading day (only available for priced IPOs)."
         ),
         default=None,
+        json_schema_extra={"x-unit_measurement": "percent", "x-frontend_multiply": 100},
     )
     id: Optional[str] = Field(description="The Intrinio ID of the IPO.", default=None)
     company: Optional[IntrinioCompany] = Field(

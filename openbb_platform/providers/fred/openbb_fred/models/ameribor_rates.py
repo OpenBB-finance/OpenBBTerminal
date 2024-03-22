@@ -1,5 +1,6 @@
 """FRED AMERIBOR Model."""
 
+# pylint: disable=unused-argument
 from typing import Any, Dict, List, Literal, Optional
 
 from openbb_core.provider.abstract.fetcher import Fetcher
@@ -50,17 +51,14 @@ class FREDAMERIBORData(AMERIBORData):
 
     @field_validator("rate", mode="before", check_fields=False)
     @classmethod
-    def value_validate(cls, v):
-        """Validate rate."""
-        try:
-            return float(v)
-        except ValueError:
+    def normalize_percent(cls, v):
+        """Normalize percent."""
+        if v and isinstance(v, str) and v == ".":
             return None
+        return float(v) / 100 if v else None
 
 
-class FREDAMERIBORFetcher(
-    Fetcher[FREDAMERIBORQueryParams, List[Dict[str, List[FREDAMERIBORData]]]]
-):
+class FREDAMERIBORFetcher(Fetcher[FREDAMERIBORQueryParams, List[FREDAMERIBORData]]):
     """Transform the query, extract and transform the data from the FRED endpoints."""
 
     data_type = FREDAMERIBORData
@@ -86,7 +84,11 @@ class FREDAMERIBORFetcher(
     @staticmethod
     def transform_data(
         query: FREDAMERIBORQueryParams, data: dict, **kwargs: Any
-    ) -> List[Dict[str, List[FREDAMERIBORData]]]:
+    ) -> List[FREDAMERIBORData]:
         """Transform data."""
         keys = ["date", "value"]
-        return [FREDAMERIBORData(**{k: x[k] for k in keys}) for x in data]
+        return [
+            FREDAMERIBORData.model_validate({k: x[k] for k in keys})
+            for x in data
+            if x["value"] != "."
+        ]

@@ -1,5 +1,7 @@
 """Stockgrid Short Volume Model."""
 
+# pylint: disable=unused-argument
+
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -31,6 +33,7 @@ class StockgridShortVolumeData(ShortVolumeData):
     short_volume_percent: Optional[float] = Field(
         default=None,
         description="Percentage of the total volume that was short volume.",
+        json_schema_extra={"x-unit_measurement": "percent", "x-frontend_multiply": 100},
     )
 
     @field_validator("date", mode="before", check_fields=False)

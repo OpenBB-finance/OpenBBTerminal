@@ -144,7 +144,9 @@ class IntrinioIncomeStatementData(IncomeStatementData):
         default=None, description="Total gross profit"
     )
     gross_profit_margin: Optional[float] = Field(
-        default=None, description="Gross margin ratio."
+        default=None,
+        description="Gross margin ratio.",
+        json_schema_extra={"x-unit_measurement": "percent", "x-frontend_multiply": 100},
     )
     provision_for_credit_losses: Optional[float] = Field(
         default=None,
@@ -458,7 +460,6 @@ class IntrinioIncomeStatementFetcher(
             f"{base_url}/fundamentals/{intrinio_id}-{period}/standardized_financials?api_key={api_key}"
             for period in fiscal_periods
         ]
-
         return await amake_requests(urls, callback, **kwargs)
 
     @staticmethod

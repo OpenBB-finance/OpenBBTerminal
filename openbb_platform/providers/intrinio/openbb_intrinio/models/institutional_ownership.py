@@ -1,5 +1,7 @@
 """Intrinio Institutional Ownership Model."""
 
+# pylint disable=unused-argument
+
 import asyncio
 from typing import Any, Dict, List, Optional
 
@@ -54,8 +56,10 @@ class IntrinioInstitutionalOwnershipData(InstitutionalOwnershipData):
     amount_change: float = Field(
         description="Amount change of the institutional owner."
     )
-    amount_percent_change: float = Field(
-        description="Amount percent change of the institutional owner."
+    amount_change_percent: Optional[float] = Field(
+        default=None,
+        description="Change in the amount of ownership since the last report, as a normalized percent.",
+        json_schema_extra={"x-unit_measurement": "percent", "x-frontend_multiply": 100},
     )
 
 

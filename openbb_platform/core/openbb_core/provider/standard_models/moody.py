@@ -3,7 +3,7 @@
 from datetime import (
     date as dateType,
 )
-from typing import Literal, Optional
+from typing import Optional
 
 from pydantic import Field, field_validator
 
@@ -26,10 +26,6 @@ class MoodyCorporateBondIndexQueryParams(QueryParams):
         default=None,
         description=QUERY_DESCRIPTIONS.get("end_date", ""),
     )
-    index_type: Literal["aaa", "baa"] = Field(
-        default="aaa",
-        description="The type of series.",
-    )
 
     @field_validator("index_type", mode="before", check_fields=False)
     @classmethod
@@ -42,4 +38,8 @@ class MoodyCorporateBondIndexData(Data):
     """Moody Corporate Bond Index Data."""
 
     date: dateType = Field(description=DATA_DESCRIPTIONS.get("date", ""))
-    rate: Optional[float] = Field(description="Moody Corporate Bond Index Rate.")
+    rate: Optional[float] = Field(
+        default=None,
+        description="Moody Corporate Bond Index Rate.",
+        json_schema_extra={"x-unit_measurement": "percent", "x-frontend_multiply": 100},
+    )

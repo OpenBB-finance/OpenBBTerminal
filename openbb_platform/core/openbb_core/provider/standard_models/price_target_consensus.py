@@ -1,6 +1,6 @@
 """Price Target Consensus Standard Model."""
 
-from typing import List, Optional, Set, Union
+from typing import Optional
 
 from pydantic import Field, field_validator
 
@@ -40,11 +40,3 @@ class PriceTargetConsensusData(Data):
     target_median: Optional[float] = Field(
         default=None, description="Median target of the price target consensus."
     )
-
-    @field_validator("symbol", mode="before", check_fields=False)
-    @classmethod
-    def to_upper(cls, v: Union[str, List[str], Set[str]]):
-        """Convert field to uppercase."""
-        if isinstance(v, str):
-            return v.upper()
-        return ",".join([symbol.upper() for symbol in list(v)])

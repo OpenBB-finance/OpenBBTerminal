@@ -4,7 +4,6 @@
 
 from datetime import (
     date as dateType,
-    datetime,
 )
 from typing import Any, Dict, List, Optional, Union
 from warnings import warn
@@ -70,10 +69,10 @@ class FMPEtfHoldingsData(EtfHoldingsData):
         default=None,
     )
     weight: Optional[float] = Field(
-        description="The weight of the holding, as a normalized percent.",
+        description="The weight of the holding as a normalized percent.",
         alias="pctVal",
         default=None,
-        json_schema_extra={"unit_measurement": "percent", "frontend_multiply": 100},
+        json_schema_extra={"x-unit_measurement": "percent", "x-frontend_multiply": 100},
     )
     payoff_profile: Optional[str] = Field(
         description="The payoff profile of the holding.",
@@ -122,25 +121,12 @@ class FMPEtfHoldingsData(EtfHoldingsData):
         alias="acceptanceTime",
         default=None,
     )
-    updated: Optional[Union[dateType, datetime]] = Field(
-        description="The date the data was updated.", default=None
-    )
 
     @field_validator("weight", mode="before", check_fields=False)
     @classmethod
-    def normalize_percent(cls, v):
-        """Normalize percent values."""
+    def normalize_percent(cls, v):  # pylint: disable=E0213
+        """Normalize percent."""
         return float(v) / 100 if v else None
-
-    @field_validator("cusip", "isin", "balance", "name", "symbol", "value")
-    @classmethod
-    def replace_empty(cls, v):
-        """Replace empty strings and 0s with None."""
-        if isinstance(v, str):
-            return v if v not in ("", "0") else None
-        if isinstance(v, (float, int)):
-            return v if v and v not in (0.0, 0) else None
-        return v if v else None
 
 
 class FMPEtfHoldingsFetcher(

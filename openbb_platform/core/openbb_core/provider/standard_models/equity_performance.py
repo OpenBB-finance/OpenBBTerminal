@@ -30,18 +30,22 @@ class EquityPerformanceData(Data):
     symbol: str = Field(
         description=DATA_DESCRIPTIONS.get("symbol", ""),
     )
-    name: str = Field(
+    name: Optional[str] = Field(
+        default=None,
         description="Name of the entity.",
     )
     price: float = Field(
         description="Last price.",
     )
-    change: float = Field(
+    change: Optional[float] = Field(
         description="Change in price value.",
     )
-    percent_change: float = Field(
-        description="Percent change.",
+    change_percent: Optional[float] = Field(
+        default=None,
+        description="Change in price as a normalized percentage.",
+        json_schema_extra={"x-unit_measurement": "percent", "x-frontend_multiply": 100},
     )
-    volume: float = Field(
+    volume: Optional[float] = Field(
+        default=None,
         description=DATA_DESCRIPTIONS.get("volume", ""),
     )

@@ -8,7 +8,7 @@ from openbb_core.provider.standard_models.fed_rates import (
     FEDQueryParams,
 )
 from openbb_fred.utils.fred_base import Fred
-from pydantic import Field, field_validator
+from pydantic import Field
 
 FED_PARAMETER_TO_FRED_ID = {
     "monthly": "FEDFUNDS",
@@ -40,18 +40,9 @@ class FREDFEDData(FEDData):
 
     __alias_dict__ = {"rate": "value"}
 
-    @field_validator("rate", mode="before", check_fields=False)
-    @classmethod
-    def value_validate(cls, v):
-        """Validate rate."""
-        try:
-            return float(v)
-        except ValueError:
-            return None
 
-
-class FREDFEDFetcher(Fetcher[FREDFEDQueryParams, List[Dict[str, List[FREDFEDData]]]]):
-    """FRED FED Model."""
+class FREDFEDFetcher(Fetcher[FREDFEDQueryParams, List[FREDFEDData]]):
+    """FRED Fed Rates Fetcher."""
 
     data_type = FREDFEDData
 
@@ -63,7 +54,7 @@ class FREDFEDFetcher(Fetcher[FREDFEDQueryParams, List[Dict[str, List[FREDFEDData
     @staticmethod
     def extract_data(
         query: FREDFEDQueryParams, credentials: Optional[Dict[str, str]], **kwargs: Any
-    ) -> dict:
+    ) -> List[Dict]:
         """Extract data."""
         key = credentials.get("fred_api_key") if credentials else ""
         fred_series = FED_PARAMETER_TO_FRED_ID[query.parameter]
@@ -74,7 +65,20 @@ class FREDFEDFetcher(Fetcher[FREDFEDQueryParams, List[Dict[str, List[FREDFEDData
     @staticmethod
     def transform_data(
         query: FREDFEDQueryParams, data: dict, **kwargs: Any
-    ) -> List[Dict[str, List[FREDFEDData]]]:
+    ) -> List[FREDFEDData]:
         """Transform data."""
-        keys = ["date", "value"]
-        return [FREDFEDData(**{k: x[k] for k in keys}) for x in data]
+        is_volume = query.parameter == "volume"
+        lambda_keys = {
+            "date": lambda x: x["date"],
+            "value": lambda x: float(x["value"]) / 100 if not is_volume else x["value"],
+        }
+
+        results: List[FREDFEDData] = []
+
+        for x in data:
+            if x["value"] == ".":
+                continue
+            item = {k: lambda_keys[k](x) for k in lambda_keys}  # pylint: disable=C0206
+            results.append(FREDFEDData.model_validate(item))
+
+        return results

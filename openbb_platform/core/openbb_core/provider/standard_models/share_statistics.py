@@ -34,7 +34,8 @@ class ShareStatisticsData(Data):
     )
     free_float: Optional[float] = Field(
         default=None,
-        description="Percentage of unrestricted shares of a publicly-traded company.",
+        description="Normalized percentage of unrestricted shares of a publicly-traded company.",
+        json_schema_extra={"x-unit_measurement": "percent", "x-frontend_multiply": 100},
     )
     float_shares: Optional[float] = Field(
         default=None,

@@ -46,4 +46,8 @@ class SpotRateData(Data):
     """Spot Rate Data."""
 
     date: dateType = Field(description=DATA_DESCRIPTIONS.get("date", ""))
-    rate: Optional[float] = Field(description="Spot Rate.")
+    rate: Optional[float] = Field(
+        default=None,
+        description="Spot Rate.",
+        json_schema_extra={"x-unit_measurement": "percent", "x-frontend_multiply": 100},
+    )

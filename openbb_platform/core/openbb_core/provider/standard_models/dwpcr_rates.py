@@ -32,4 +32,8 @@ class DiscountWindowPrimaryCreditRateData(Data):
     """Discount Window Primary Credit Rate Data."""
 
     date: dateType = Field(description=DATA_DESCRIPTIONS.get("date", ""))
-    rate: Optional[float] = Field(description="Discount Window Primary Credit Rate.")
+    rate: Optional[float] = Field(
+        default=None,
+        description="Discount Window Primary Credit Rate.",
+        json_schema_extra={"x-unit_measurement": "percent", "x-frontend_multiply": 100},
+    )

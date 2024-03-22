@@ -28,5 +28,6 @@ class USYieldCurveData(Data):
 
     maturity: float = Field(description="Maturity of the treasury rate in years.")
     rate: float = Field(
-        description="Associated rate given in decimal form (0.05 is 5%)"
+        description="Associated rate as a normalized percent.",
+        json_schema_extra={"x-unit_measurement": "percent", "x-frontend_multiply": 100},
     )

@@ -14,7 +14,7 @@ from openbb_core.provider.standard_models.equity_performance import (
 from openbb_core.provider.utils.helpers import make_request
 from openbb_yfinance.utils.helpers import df_transform_numbers
 from pandas import DataFrame
-from pydantic import Field
+from pydantic import Field, field_validator
 
 
 class YFUndervaluedLargeCapsQueryParams(EquityPerformanceQueryParams):
@@ -33,7 +33,7 @@ class YFUndervaluedLargeCapsData(EquityPerformanceData):
         "volume": "Volume",
         "change": "Change",
         "price": "Price (Intraday)",
-        "percent_change": "% Change",
+        "change_percent": "% Change",
         "market_cap": "Market Cap",
         "avg_volume_3_months": "Avg Vol (3 month)",
         "pe_ratio_ttm": "PE Ratio (TTM)",
@@ -51,6 +51,12 @@ class YFUndervaluedLargeCapsData(EquityPerformanceData):
         description="PE Ratio (TTM).",
         default=None,
     )
+
+    @field_validator("change_percent")
+    @classmethod
+    def normalize_percent(cls, v):
+        """Normalize percent."""
+        return float(v) / 100 if v else None
 
 
 class YFUndervaluedLargeCapsFetcher(

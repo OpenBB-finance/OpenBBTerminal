@@ -1,20 +1,16 @@
 """FMP Key Metrics Model."""
 
 import asyncio
-from datetime import (
-    date as dateType,
-    datetime,
-)
-from typing import Any, Dict, List, Optional
+from datetime import datetime
+from typing import Any, Dict, List, Literal, Optional
 from warnings import warn
 
-from openbb_core.provider.abstract.data import ForceInt
 from openbb_core.provider.abstract.fetcher import Fetcher
 from openbb_core.provider.standard_models.key_metrics import (
     KeyMetricsData,
     KeyMetricsQueryParams,
 )
-from openbb_core.provider.utils.descriptions import DATA_DESCRIPTIONS
+from openbb_core.provider.utils.descriptions import QUERY_DESCRIPTIONS
 from openbb_core.provider.utils.errors import EmptyDataError
 from openbb_core.provider.utils.helpers import amake_request
 from openbb_fmp.utils.helpers import response_callback
@@ -29,6 +25,10 @@ class FMPKeyMetricsQueryParams(KeyMetricsQueryParams):
 
     __json_schema_extra__ = {"symbol": ["multiple_items_allowed"]}
 
+    period: Optional[Literal["annual", "quarter"]] = Field(
+        default="annual", description=QUERY_DESCRIPTIONS.get("period", "")
+    )
+
     with_ttm: Optional[bool] = Field(
         default=False, description="Include trailing twelve months (TTM) data."
     )
@@ -37,11 +37,12 @@ class FMPKeyMetricsQueryParams(KeyMetricsQueryParams):
 class FMPKeyMetricsData(KeyMetricsData):
     """FMP Key Metrics Data."""
 
-    date: dateType = Field(description=DATA_DESCRIPTIONS.get("date", ""))
-    period: str = Field(description="Period of the data.")
-    calendar_year: Optional[ForceInt] = Field(
-        default=None, description="Calendar year."
-    )
+    __alias_dict__ = {
+        "period_ending": "date",
+        "fiscal_period": "period",
+        "fiscal_year": "calendarYear",
+    }
+
     revenue_per_share: Optional[float] = Field(
         default=None, description="Revenue per share"
     )
@@ -99,9 +100,15 @@ class FMPKeyMetricsData(KeyMetricsData):
     ev_to_free_cash_flow: Optional[float] = Field(
         default=None, description="Enterprise value-to-free cash flow ratio"
     )
-    earnings_yield: Optional[float] = Field(default=None, description="Earnings yield")
+    earnings_yield: Optional[float] = Field(
+        default=None,
+        description="Earnings yield",
+        json_schema_extra={"x-unit_measurement": "percent", "x-frontend_multiply": 100},
+    )
     free_cash_flow_yield: Optional[float] = Field(
-        default=None, description="Free cash flow yield"
+        default=None,
+        description="Free cash flow yield",
+        json_schema_extra={"x-unit_measurement": "percent", "x-frontend_multiply": 100},
     )
     debt_to_equity: Optional[float] = Field(
         default=None, description="Debt-to-equity ratio"
@@ -122,7 +129,7 @@ class FMPKeyMetricsData(KeyMetricsData):
     dividend_yield: Optional[float] = Field(
         default=None,
         description="Dividend yield, as a normalized percent.",
-        json_schema_extra={"unit_measurement": "percent", "frontend_multiply": 100},
+        json_schema_extra={"x-unit_measurement": "percent", "x-frontend_multiply": 100},
     )
     payout_ratio: Optional[float] = Field(default=None, description="Payout ratio")
     sales_general_and_administrative_to_revenue: Optional[float] = Field(
@@ -151,10 +158,14 @@ class FMPKeyMetricsData(KeyMetricsData):
     )
     graham_number: Optional[float] = Field(default=None, description="Graham number")
     roic: Optional[float] = Field(
-        default=None, description="Return on invested capital"
+        default=None,
+        description="Return on invested capital",
+        json_schema_extra={"x-unit_measurement": "percent", "x-frontend_multiply": 100},
     )
     return_on_tangible_assets: Optional[float] = Field(
-        default=None, description="Return on tangible assets"
+        default=None,
+        description="Return on tangible assets",
+        json_schema_extra={"x-unit_measurement": "percent", "x-frontend_multiply": 100},
     )
     graham_net_net: Optional[float] = Field(
         default=None, description="Graham net-net working capital"
@@ -198,7 +209,11 @@ class FMPKeyMetricsData(KeyMetricsData):
     inventory_turnover: Optional[float] = Field(
         default=None, description="Inventory turnover"
     )
-    roe: Optional[float] = Field(default=None, description="Return on equity")
+    roe: Optional[float] = Field(
+        default=None,
+        description="Return on equity",
+        json_schema_extra={"x-unit_measurement": "percent", "x-frontend_multiply": 100},
+    )
     capex_per_share: Optional[float] = Field(
         default=None, description="Capital expenditures per share"
     )

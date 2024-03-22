@@ -47,6 +47,10 @@ MOODY_TO_OPTIONS = {
 class FREDMoodyCorporateBondIndexQueryParams(MoodyCorporateBondIndexQueryParams):
     """FRED Moody Corporate Bond Index Query."""
 
+    index_type: Literal["aaa", "baa"] = Field(
+        default="aaa",
+        description="The type of series.",
+    )
     spread: Optional[Literal["treasury", "fed_funds"]] = Field(
         default=None, description="The type of spread."
     )
@@ -59,12 +63,11 @@ class FREDMoodyCorporateBondIndexData(MoodyCorporateBondIndexData):
 
     @field_validator("rate", mode="before", check_fields=False)
     @classmethod
-    def value_validate(cls, v):
-        """Validate rate."""
-        try:
-            return float(v)
-        except ValueError:
+    def normalize_percent(cls, v):
+        """Normalize percent."""
+        if v and isinstance(v, str) and v == ".":
             return None
+        return float(v) / 100 if v else None
 
 
 class FREDMoodyCorporateBondIndexFetcher(

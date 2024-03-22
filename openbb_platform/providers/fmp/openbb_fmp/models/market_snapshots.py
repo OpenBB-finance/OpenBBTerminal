@@ -110,12 +110,6 @@ class FMPMarketSnapshotsData(MarketSnapshotsData):
             return v
         return parser.parse(str(v)).date() if v else None
 
-    @field_validator("change_percent", mode="before", check_fields=False)
-    @classmethod
-    def normalize_percent(cls, v):
-        """Normalize the percent."""
-        return float(v) / 100 if v else None
-
     @field_validator(
         "shares_outstanding",
         "volume",
@@ -141,6 +135,12 @@ class FMPMarketSnapshotsData(MarketSnapshotsData):
     def validate_empty_strings(cls, v):
         """Validate the name."""
         return v if v and v != " " and v != "''" else None
+
+    @field_validator("change_percent", mode="before", check_fields=False)
+    @classmethod
+    def normalize_percent(cls, v):
+        """Return the percent value as a normalized value."""
+        return float(v) / 100 if v else None
 
 
 class FMPMarketSnapshotsFetcher(

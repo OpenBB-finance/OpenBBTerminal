@@ -22,4 +22,8 @@ class MarketMoversData(Data):
     )
     price: float = Field(description="The last price of the ticker.")
     change: float = Field(description="The change in price from open.")
-    change_percent: float = Field(description="The change in percent from open.")
+    change_percent: Optional[float] = Field(
+        default=None,
+        description="The change in price, as a normalized percent.",
+        json_schema_extra={"x-unit_measurement": "percent", "x-frontend_multiply": 100},
+    )

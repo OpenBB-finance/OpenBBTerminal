@@ -85,7 +85,7 @@ def test_equity_fundamental_balance(params, headers):
 
 @parametrize(
     "params",
-    [({"symbol": "AAPL", "limit": 10, "provider": "fmp"})],
+    [({"symbol": "AAPL", "limit": 10, "provider": "fmp", "period": "annual"})],
 )
 @pytest.mark.integration
 def test_equity_fundamental_balance_growth(params, headers):
@@ -216,7 +216,7 @@ def test_equity_fundamental_cash(params, headers):
 
 @parametrize(
     "params",
-    [({"symbol": "AAPL", "limit": 10, "provider": "fmp"})],
+    [({"symbol": "AAPL", "limit": 10, "provider": "fmp", "period": "annual"})],
 )
 @pytest.mark.integration
 def test_equity_fundamental_cash_growth(params, headers):
@@ -570,9 +570,16 @@ def test_equity_calendar_ipo(params, headers):
                 "with_ttm": False,
             }
         ),
-        ({"provider": "intrinio", "symbol": "AAPL", "period": "annual", "limit": 100}),
-        ({"provider": "yfinance", "symbol": "AAPL"}),
+        (
+            {
+                "provider": "intrinio",
+                "symbol": "AAPL",
+                "period": "annual",
+                "limit": 100,
+            }
+        ),
         ({"provider": "finviz", "symbol": "AAPL,GOOG"}),
+        ({"provider": "yfinance", "symbol": "AAPL,GOOG"}),
     ],
 )
 @pytest.mark.integration
