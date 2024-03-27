@@ -43,6 +43,7 @@ from openbb_intrinio.models.search_attributes import (
 )
 from openbb_intrinio.models.share_statistics import IntrinioShareStatisticsFetcher
 from openbb_intrinio.models.world_news import IntrinioWorldNewsFetcher
+from openbb_intrinio.models.sales_estimates import IntrinioZackSalesEstimatesFetcher
 
 intrinio_provider = Provider(
     name="intrinio",
@@ -84,5 +85,6 @@ intrinio_provider = Provider(
         "SearchAttributes": IntrinioSearchAttributesFetcher,
         "ShareStatistics": IntrinioShareStatisticsFetcher,
         "WorldNews": IntrinioWorldNewsFetcher,
+        "SalesEstimates": IntrinioZackSalesEstimatesFetcher,
     },
 )
