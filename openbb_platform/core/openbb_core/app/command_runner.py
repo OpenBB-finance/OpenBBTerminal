@@ -1,5 +1,8 @@
 """Command runner module."""
 
+# pylint: disable=R0903
+
+import json
 from copy import deepcopy
 from dataclasses import asdict, is_dataclass
 from datetime import datetime
@@ -192,7 +195,7 @@ class ParametersBuilder:
         ):
             valid = asdict(annotation())  # type: ignore
             for p in extra_params:
-                if p not in valid:
+                if p not in valid or p == "chart_params":
                     warn(
                         message=f"Parameter '{p}' not found.",
                         category=OpenBBWarning,
@@ -224,7 +227,7 @@ class ParametersBuilder:
         }
         # We allow extra fields to return with model with 'cc: CommandContext'
         config = ConfigDict(extra="allow", arbitrary_types_allowed=True)
-        ValidationModel = create_model(func.__name__, __config__=config, **fields)  # type: ignore
+        ValidationModel = create_model(func.__name__, __config__=config, **fields)  # type: ignore  # pylint: disable=C0103
         # Validate and coerce
         model = ValidationModel(**kwargs)
         ParametersBuilder._warn_kwargs(
@@ -233,6 +236,7 @@ class ParametersBuilder:
         )
         return dict(model)
 
+    # pylint: disable=R0913
     @classmethod
     def build(
         cls,
@@ -273,6 +277,7 @@ class ParametersBuilder:
         return kwargs
 
 
+# pylint: disable=too-few-public-methods
 class StaticCommandRunner:
     """Static Command Runner."""
 
@@ -281,8 +286,10 @@ class StaticCommandRunner:
         cls,
         func: Callable,
         kwargs: Dict[str, Any],
+        show_warnings: bool = True,  # pylint: disable=unused-argument   # type: ignore
     ) -> OBBject:
         """Run a command and return the output."""
+
         obbject = await maybe_coroutine(func, **kwargs)
         obbject.provider = getattr(
             kwargs.get("provider_choices", None), "provider", None
@@ -293,6 +300,7 @@ class StaticCommandRunner:
     def _chart(
         cls,
         obbject: OBBject,
+        metadata: Optional[Any] = None,
         **kwargs,
     ) -> None:
         """Create a chart from the command output."""
@@ -300,8 +308,34 @@ class StaticCommandRunner:
             raise OpenBBError(
                 "Charting is not installed. Please install `openbb-charting`."
             )
-        obbject.charting.show(render=False, **kwargs)  # type: ignore
+        chart_params = {}
+        if "extra_params" in kwargs:
+            try:
+                chart_params = kwargs["extra_params"].__dict__.get("chart_params", {})
+            except AttributeError:
+                chart_params = kwargs["extra_params"].get("chart_params")
+        if "chart_params" in kwargs:
+            chart_params.update(kwargs.pop("chart_params", {}))
+        if "kwargs" in kwargs:
+            _kwargs = kwargs.pop("kwargs", {})
+            chart_params.update(_kwargs.get("chart_params", {}))
 
+        # TODO: Update when a proper metadata transmission solution is implemented.  # pylint: disable=W0511
+        try:
+            message = (
+                getattr(metadata[0], "message", "{}")
+                if metadata and isinstance(metadata, list) and len(metadata) > 0
+                else "{}"
+            )
+            metadata = json.loads(str(message)) if message else {}
+        except json.JSONDecodeError:
+            metadata = {}
+
+        obbject.charting.show(  # type: ignore
+            render=False, metadata=metadata, **chart_params, **kwargs
+        )
+
+    # pylint: disable=R0913, R0914
     @classmethod
     async def _execute_func(
         cls,
@@ -350,7 +384,7 @@ class StaticCommandRunner:
                 obbject._standard_params = kwargs.get("standard_params", None)
 
                 if chart and obbject.results:
-                    cls._chart(obbject, **kwargs)
+                    cls._chart(obbject, warning_list, **kwargs)
 
             except Exception as e:
                 raise OpenBBError(e) from e
@@ -381,6 +415,7 @@ class StaticCommandRunner:
                     )
         return obbject
 
+    # pylint: disable=W0718
     @classmethod
     async def run(
         cls,

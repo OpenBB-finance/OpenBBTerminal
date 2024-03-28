@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 
 import numpy as np
 import pandas as pd
+
 from openbb_charting.core.config.openbb_styles import PLT_FIB_COLORWAY
 from openbb_charting.core.openbb_figure import OpenBBFigure
 from openbb_charting.core.plotly_ta.base import PltTA, indicator
@@ -76,7 +77,7 @@ class Custom(PltTA):
                     fig.add_scatter(
                         x=[df_ta.index[0], x_range],
                         y=[lv, lv],
-                        opacity=1,
+                        opacity=0.8,
                         mode="lines+text",
                         text=["", f"{lv:{self.get_float_precision()}}"],
                         textposition="top center",
@@ -99,7 +100,7 @@ class Custom(PltTA):
                     fig.add_scatter(
                         x=[df_ta.index[0], x_range],
                         y=[lv, lv],
-                        opacity=1,
+                        opacity=0.85,
                         mode="lines+text",
                         text=["", f"{lv:{self.get_float_precision()}}"],
                         textposition="top center",
@@ -199,7 +200,7 @@ class Custom(PltTA):
                 name=fibs[i],
                 x=[min_date, df_ta2.index.max()],
                 y=[levels[i], levels[i]],
-                opacity=0.9,
+                opacity=0.85,
                 mode="lines+text",
                 text=text,
                 textposition=text_pos,

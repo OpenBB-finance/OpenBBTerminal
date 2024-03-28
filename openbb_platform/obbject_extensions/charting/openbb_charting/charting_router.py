@@ -6,13 +6,25 @@ from typing import Any, Dict, Optional, Tuple, Union
 import pandas as pd
 from openbb_core.app.model.charts.chart import ChartFormat
 from openbb_core.app.utils import basemodel_to_df
+from plotly.graph_objs import Figure
 
 from openbb_charting.core.chart_style import ChartStyle
 from openbb_charting.core.openbb_figure import OpenBBFigure
 from openbb_charting.core.plotly_ta.ta_class import PlotlyTA
+from openbb_charting.core.to_chart import to_chart
 from openbb_charting.query_params import (
-    FredSeriesChartQueryParams,
+    EconomyFredSeriesChartQueryParams,
+    EquityPriceHistoricalChartQueryParams,
+    EquityPricePerformanceChartQueryParams,
     TechnicalConesChartQueryParams,
+)
+from openbb_charting.styles.colors import LARGE_CYCLER
+from openbb_charting.utils.generic_charts import bar_chart
+from openbb_charting.utils.helpers import (
+    calculate_returns,
+    heikin_ashi,
+    should_share_axis,
+    z_score_standardization,
 )
 
 CHART_FORMAT = ChartFormat.plotly
@@ -22,64 +34,605 @@ CHART_FORMAT = ChartFormat.plotly
 # from .core.openbb_figure_table import OpenBBFigureTable
 
 
-def equity_price_historical(**kwargs) -> Tuple["OpenBBFigure", Dict[str, Any]]:
-    """Equity price chart."""
+def equity_price_performance(  # noqa: PLR0912
+    **kwargs: Union[Any, EquityPricePerformanceChartQueryParams],
+) -> Tuple[Union[OpenBBFigure, Figure], Dict[str, Any]]:
+    """Equity Price Performance Chart."""
 
-    def handle_indicators(ma):
-        """Handle indicators."""
-        k = {}
-        if ma:
-            k["rma"] = dict(length=ma)
-        return k
+    if "data" in kwargs and isinstance(kwargs["data"], pd.DataFrame):
+        data = kwargs["data"]
+    elif "data" in kwargs and isinstance(kwargs["data"], list):
+        data = basemodel_to_df(kwargs["data"], index=kwargs.get("index", "symbol"))  # type: ignore
+    else:
+        data = basemodel_to_df(
+            kwargs["obbject_item"], index=kwargs.get("index", "symbol")  # type: ignore
+        )
 
-    data = basemodel_to_df(kwargs["obbject_item"], index=kwargs.get("index", "date"))
-    standard_params = kwargs["standard_params"]
-    ma = standard_params.get("ma", None)
-    prepost = standard_params.get("prepost", False)
-    symbol = standard_params.get("symbol", "")
+    cols = [
+        "one_day",
+        "one_week",
+        "one_month",
+        "three_month",
+        "six_month",
+        "ytd",
+        "one_year",
+        "two_year",
+        "three_year",
+        "four_year",
+        "five_year",
+    ]
 
-    ta = PlotlyTA()
-    fig = ta.plot(
-        data,
-        indicators=dict(**handle_indicators(ma)),
-        symbol=f"{symbol} historical data",
-        prepost=prepost,
+    df = pd.DataFrame()
+    chart_df = pd.DataFrame()
+
+    if "symbol" in data.columns:
+        data = data.set_index("symbol")
+    chart_cols = []
+
+    if len(data) == 0:
+        raise ValueError("No data was found in the DataFrame.")
+
+    data = data.drop_duplicates(keep="first")
+
+    for col in cols:
+        if col in data.columns and data[col].notnull().any():
+            df[col.replace("_", " ").title()] = data[col].apply(
+                lambda x: round(x * 100, 4) if x is not None else None
+            )
+
+    if df.empty:
+        raise ValueError(f"No columns matching, {cols}, were found in the data.")
+
+    chart_df = df.T
+    chart_cols = chart_df.columns.to_list()
+
+    if "limit" in kwargs and isinstance(kwargs.get("limit"), int):
+        limit = kwargs.pop("limit", 10)
+        chart_df = chart_df.head(limit)  # type: ignore
+
+    layout_kwargs: Dict[str, Any] = kwargs["layout_kwargs"] if "layout_kwargs" in kwargs else {}  # type: ignore
+
+    title = (
+        f"{kwargs.pop('title')}" if "title" in kwargs else "Equity Price Performance"
     )
+    orientation = (
+        kwargs.pop("orientation")
+        if "orientation" in kwargs and kwargs.get("orientation") is not None
+        else "v"
+    )
+
+    ytitle = "Performance (%)"
+    xtitle = None
+
+    if orientation == "h":
+        xtitle = ytitle
+        ytitle = None
+
+    fig = bar_chart(
+        chart_df.reset_index(),
+        x="index",
+        y=chart_cols,
+        title=title,
+        xtitle=xtitle,
+        ytitle=ytitle,
+        orientation=orientation,  # type: ignore
+    )
+    fig.update_traces(
+        hovertemplate=(
+            "%{fullData.name}:%{y:.2f}%<extra></extra>"
+            if orientation == "v"
+            else "%{fullData.name}:%{x:.2f}%<extra></extra>"
+        )
+    )
+
+    fig.update_layout(**layout_kwargs)
+    content = fig.show(external=True).to_plotly_json()  # type: ignore
+
+    return fig, content
+
+
+def equity_price_historical(  # noqa: PLR0912
+    **kwargs: Union[Any, EquityPriceHistoricalChartQueryParams],
+) -> Tuple[OpenBBFigure, Dict[str, Any]]:
+    """Equity Price Historical Chart."""
+
+    if "data" in kwargs and isinstance(kwargs["data"], pd.DataFrame):
+        data = kwargs["data"]
+    elif "data" in kwargs and isinstance(kwargs["data"], list):
+        data = basemodel_to_df(kwargs["data"], index=kwargs.get("index", "date"))  # type: ignore
+    else:
+        data = basemodel_to_df(
+            kwargs["obbject_item"], index=kwargs.get("index", "date")  # type: ignore
+        )
+
+    if "date" in data.columns:
+        data = data.set_index("date")
+
+    target = str(kwargs.get("target"))
+    normalize = kwargs.get("normalize") is True
+    returns = kwargs.get("returns") is True
+    same_axis = kwargs.get("same_axis") is True
+    text_color = "black" if ChartStyle().plt_style == "light" else "white"
+    title = f"{kwargs.get('title')}" if "title" in kwargs else "Historical Prices"
+    y1title = ""
+    y2title = ""
+    candles = True
+    multi_symbol = (
+        bool(kwargs.get("multi_symbol") is True)
+        or (
+            "symbol" in data.columns
+            and target in data.columns
+            and len(data.symbol.unique()) > 1
+        )
+        or ("target" in kwargs and kwargs.get("target") is not None)
+        or "symbol" in data.columns
+        or (
+            "symbol" not in data.columns
+            and bool(data.columns.isin(["open", "high", "low", "close"]).all())
+        )
+    )
+
+    target = "close" if target is None or target == "None" or target == "" else target
+
+    if multi_symbol is True:
+        if "symbol" not in data.columns and target in data.columns:
+            data = data[[target]]
+            y1title = target.title()
+        if "symbol" in data.columns and target in data.columns:
+            data = data.pivot(columns="symbol", values=target)
+            y1title = target
+            title = f"Historical {target.title()}"
+
+    indicators = kwargs.get("indicators", {})
+    candles = bool(~data.columns.isin(["open", "high", "low", "close"]).all())
+    candles = candles if kwargs.get("candles", True) else False
+    volume = kwargs.get("volume", True) if "volume" in data.columns else False
+
+    if normalize is True:
+        if "symbol" not in data.columns and target in data.columns:
+            data = data[[target]]
+        multi_symbol = True
+        candles = False
+        volume = False
+
+    if returns is True:
+        if "symbol" not in data.columns and target in data.columns:
+            data = data[[target]]
+        multi_symbol = True
+        candles = False
+        volume = False
+
+    if (
+        multi_symbol is False
+        and normalize is False
+        and returns is False
+        and candles is True
+    ):
+        if "heikin_ashi" in kwargs and kwargs["heikin_ashi"] is True:
+            data = heikin_ashi(data)
+            title = f"{title} - Heikin Ashi"
+        _volume = False
+        if "atr" in indicators:  # type: ignore
+            _volume = volume
+            volume = False
+
+        ta = PlotlyTA()
+        fig = ta.plot(  # type: ignore
+            data,
+            indicators=indicators,  # type: ignore
+            symbol=title,
+            candles=candles,
+            volume=volume,  # type: ignore
+        )
+        fig.update_traces(selector=dict(type="scatter", mode="lines"), connectgaps=True)
+        if _volume is True and "atr" in indicators:  # type: ignore
+            fig.add_inchart_volume(data)
+        fig.update_layout(
+            title=dict(text=title, x=0.5, font=dict(size=16)),
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            font=dict(color=text_color),
+            showlegend=True,
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                xanchor="auto",
+                y=1.02,
+                x=0.95,
+                xref="paper",
+                bgcolor="rgba(0,0,0,0)",
+                font=dict(size=12),
+            ),
+            xaxis=dict(
+                ticklen=0,
+                showgrid=True,
+                gridcolor="rgba(128,128,128,0.3)",
+                zeroline=True,
+                mirror=True,
+                showline=True,
+            ),
+            xaxis2=dict(
+                ticklen=0,
+                showgrid=True,
+                gridcolor="rgba(128,128,128,0.3)",
+                zeroline=True,
+                mirror=True,
+                showline=True,
+            ),
+            yaxis=dict(
+                ticklen=0,
+                showgrid=True,
+                gridcolor="rgba(128,128,128,0.3)",
+                zeroline=True,
+                mirror=True,
+                showline=True,
+            ),
+            yaxis2=dict(
+                ticklen=0,
+                gridcolor="rgba(128,128,128,0.3)",
+            ),
+            yaxis3=dict(
+                ticklen=0,
+                gridcolor="rgba(128,128,128,0.3)",
+            ),
+            dragmode="pan",
+            hovermode="x",
+        )
+
+        content = fig.show(external=True).to_plotly_json()
+
+        return fig, content
+
+    if multi_symbol is True or candles is False:
+
+        if "symbol" not in data.columns and target in data.columns:
+            data = data[[target]]
+
+        if "symbol" in data.columns:
+            data = data.pivot(columns="symbol", values=target)
+
+        title: str = kwargs.get("title") if "title" in kwargs else title if title else "Historical Prices"  # type: ignore
+
+        y1title = data.iloc[:, 0].name
+        y2title = ""
+
+        if len(data.columns) > 2 or normalize is True or returns is True:
+            if returns is True or (len(data.columns) > 2 and normalize is False):
+                data = data.apply(calculate_returns)
+                title = f"{title} - Cumulative Returns"
+                y1title = "Percent"
+            if normalize is True:
+                if returns is True:
+                    title = f"{title.replace(' - Cumulative Returns', '')} - Normalized Cumulative Returns"
+                else:
+                    title = title + " - Normalized"
+                data = data.apply(z_score_standardization)
+                y1title = None
+                y2title = None
+
+        fig = OpenBBFigure()
+
+        fig.update_layout(ChartStyle().plotly_template.get("layout", {}))
+
+        for i, col in enumerate(data.columns):
+
+            hovertemplate = f"{data[col].name}: %{{y}}<extra></extra>"
+            yaxis = "y1"
+            if y1title and y1title != "Percent":
+                yaxis = (
+                    (
+                        "y1"
+                        if should_share_axis(data, col, y1title)  # type: ignore
+                        or col == y1title
+                        or normalize is True
+                        or returns is True
+                        else "y2"
+                    )
+                    if same_axis is False
+                    else "y1"
+                )
+
+            if yaxis == "y2":
+                y2title = data[col].name
+
+            fig.add_scatter(
+                x=data.index,
+                y=data[col],
+                name=data[col].name,
+                mode="lines",
+                hovertemplate=hovertemplate,
+                line=dict(width=1, color=LARGE_CYCLER[i % len(LARGE_CYCLER)]),
+                yaxis=yaxis,
+            )
+
+    if normalize is True or returns is True:
+        y1title = "Percent" if returns is True else None
+        y2title = None
+
+    if same_axis is True:
+        y1title = None
+        y2title = None
+
+    fig.update_layout(
+        title=dict(text=title, x=0.5, font=dict(size=16)),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color=text_color),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            xanchor="right",
+            y=1.02,
+            x=1,
+            bgcolor="rgba(0,0,0,0)",
+        ),
+        yaxis1=(
+            dict(
+                side="right",
+                ticklen=0,
+                showgrid=True,
+                title=dict(
+                    text=y1title if y1title else None, standoff=20, font=dict(size=20)
+                ),
+                tickfont=dict(size=14),
+                anchor="x",
+            )
+        ),
+        yaxis2=(
+            dict(
+                overlaying="y",
+                side="left",
+                ticklen=0,
+                showgrid=False,
+                title=dict(
+                    text=y2title if y2title else None, standoff=10, font=dict(size=20)
+                ),
+                tickfont=dict(size=14),
+                anchor="x",
+            )
+            if y2title
+            else None
+        ),
+        xaxis=dict(
+            ticklen=0,
+            showgrid=True,
+        ),
+        margin=dict(l=20, r=20, b=20),
+        dragmode="pan",
+        hovermode="x",
+    )
+
     content = fig.show(external=True).to_plotly_json()
 
     return fig, content
 
 
-def _ta_ma(ma_type: str, **kwargs):
-    """Plot moving average helper."""
-    data = basemodel_to_df(kwargs["obbject_item"], index=kwargs.get("index", "date"))
-    window = kwargs.get("window", 50)
-    offset = kwargs.get("offset", 0)
-    symbol = kwargs.get("symbol", "")
+def etf_historical(
+    **kwargs: Union[Any, EquityPriceHistoricalChartQueryParams],
+) -> Tuple[OpenBBFigure, Dict[str, Any]]:
+    """ETF Historical Chart."""
+    return equity_price_historical(**kwargs)
 
-    ta = PlotlyTA()
-    fig = ta.plot(
-        data,
-        {f"{ma_type.lower()}": dict(length=window, offset=offset)},
-        f"{symbol.upper()} {ma_type.upper()}",
-        False,
-        volume=False,
+
+def index_price_historical(
+    **kwargs: Union[Any, EquityPriceHistoricalChartQueryParams],
+) -> Tuple[OpenBBFigure, Dict[str, Any]]:
+    """Index Price Historical Chart."""
+    return equity_price_historical(**kwargs)
+
+
+def currency_price_historical(
+    **kwargs: Union[Any, EquityPriceHistoricalChartQueryParams],
+) -> Tuple[OpenBBFigure, Dict[str, Any]]:
+    """Currency Price Historical Chart."""
+    return equity_price_historical(**kwargs)
+
+
+def crypto_price_historical(
+    **kwargs: Union[Any, EquityPriceHistoricalChartQueryParams],
+) -> Tuple[OpenBBFigure, Dict[str, Any]]:
+    """Crypto Price Historical Chart."""
+    return equity_price_historical(**kwargs)
+
+
+def _ta_ma(**kwargs):
+    """Plot moving average helper."""
+
+    index = (
+        kwargs.get("index")
+        if "index" in kwargs and kwargs.get("index") is not None
+        else "date"
+    )
+    data = kwargs.get("data")
+    ma_type = (
+        kwargs["ma_type"]
+        if "ma_type" in kwargs and kwargs.get("ma_type") is not None
+        else "sma"
+    )
+    ma_types = ma_type.split(",") if isinstance(ma_type, str) else ma_type
+
+    if isinstance(data, pd.DataFrame) and not data.empty:
+        data = data.set_index(index) if index in data.columns else data
+
+    if data is None:
+        data = basemodel_to_df(kwargs["obbject_item"], index=index)
+
+    if isinstance(data, list):
+        data = basemodel_to_df(data, index=index)
+
+    window = (
+        kwargs.get("length", [])
+        if "length" in kwargs and kwargs.get("length") is not None
+        else [50]
+    )
+    offset = kwargs.get("offset", 0)
+    target = (
+        kwargs.get("target")
+        if "target" in kwargs and kwargs.get("target") is not None
+        else "close"
+    )
+    if "target" in kwargs and kwargs.get("target") is not None:
+        target = kwargs.get("target") if kwargs.get("target") != "close" else target
+
+    if target not in data.columns and "close" in data.columns:
+        target = "close"
+
+    if target not in data.columns and "close" not in data.columns:
+        raise ValueError(f"Column '{target}', or 'close', not found in the data.")
+
+    df = data.copy()
+    if target in data.columns:
+        df = df[[target]]
+        df.columns = ["close"]
+    title = (
+        kwargs.get("title")
+        if "title" in kwargs and kwargs.get("title") is not None
+        else f"{ma_type.upper()}"
+    )
+
+    fig = OpenBBFigure()
+    fig = fig.create_subplots(
+        1,
+        1,
+        shared_xaxes=True,
+        vertical_spacing=0.06,
+        horizontal_spacing=0.01,
+        row_width=[1],
+        specs=[[{"secondary_y": True}]],
     )
     fig.update_layout(ChartStyle().plotly_template.get("layout", {}))
+
+    ma_df = pd.DataFrame()
+    window = [window] if isinstance(window, int) else window
+    for w in window:
+        for ma_type in ma_types:
+            ma_df[f"{ma_type.upper()} {w}"] = getattr(df.ta, ma_type)(
+                length=w, offset=offset
+            )
+
+    if kwargs.get("dropnan") is True:
+        ma_df = ma_df.dropna()
+        data = data.iloc[-len(ma_df) :]
+
+    color = 0
+
+    if (
+        "candles" in kwargs
+        and kwargs.get("candles") is True
+        and kwargs.get("target") is None
+    ):
+        volume = kwargs.get("volume") is True
+        fig, _ = to_chart(data, candles=True, volume=volume)
+
+    else:
+        ma_df[f"{target}".title()] = data[target]
+
+    for col in ma_df.columns:
+        name = col.replace("_", " ")
+        fig.add_scatter(
+            x=ma_df.index,
+            y=ma_df[col],
+            name=name,
+            mode="lines",
+            hovertemplate=f"{name}: %{{y}}<extra></extra>",
+            line=dict(width=1, color=LARGE_CYCLER[color]),
+            showlegend=True,
+        )
+        color += 1
+
+    fig.update_layout(
+        title=dict(text=title, x=0.5, font=dict(size=16)),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        showlegend=True,
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            xanchor="right",
+            y=1.02,
+            x=0.95,
+            bgcolor="rgba(0,0,0,0)",
+        ),
+        xaxis=dict(
+            ticklen=0,
+            showgrid=True,
+            gridcolor="rgba(128,128,128,0.3)",
+            zeroline=True,
+            mirror=True,
+        ),
+        yaxis=dict(
+            ticklen=0,
+            showgrid=True,
+            gridcolor="rgba(128,128,128,0.3)",
+            zeroline=True,
+            mirror=True,
+            autorange=True,
+        ),
+    )
+
     content = fig.show(external=True).to_plotly_json()
 
     return fig, content
 
 
-def technical_zlma(**kwargs) -> Tuple["OpenBBFigure", Dict[str, Any]]:
+def technical_sma(**kwargs) -> Tuple[OpenBBFigure, Dict[str, Any]]:
+    """Plot simple moving average chart."""
+    if "ma_type" not in kwargs:
+        kwargs["ma_type"] = "sma"
+    return _ta_ma(**kwargs)
+
+
+def technical_ema(**kwargs) -> Tuple[OpenBBFigure, Dict[str, Any]]:
+    """Exponential moving average chart."""
+    if "ma_type" not in kwargs:
+        kwargs["ma_type"] = "ema"
+    return _ta_ma(**kwargs)
+
+
+def technical_hma(**kwargs) -> Tuple[OpenBBFigure, Dict[str, Any]]:
+    """Hull moving average chart."""
+    if "ma_type" not in kwargs:
+        kwargs["ma_type"] = "hma"
+    return _ta_ma(**kwargs)
+
+
+def technical_wma(**kwargs) -> Tuple[OpenBBFigure, Dict[str, Any]]:
+    """Weighted moving average chart."""
+    if "ma_type" not in kwargs:
+        kwargs["ma_type"] = "wma"
+    return _ta_ma(**kwargs)
+
+
+def technical_zlma(**kwargs) -> Tuple[OpenBBFigure, Dict[str, Any]]:
     """Zero lag moving average chart."""
-    ma_type = "zlma"
-    return _ta_ma(ma_type, **kwargs)
+    if "ma_type" not in kwargs:
+        kwargs["ma_type"] = "zlma"
+    return _ta_ma(**kwargs)
 
 
-def technical_aroon(**kwargs) -> Tuple["OpenBBFigure", Dict[str, Any]]:
-    """Aroon chart."""
-    data = basemodel_to_df(kwargs["obbject_item"], index=kwargs.get("index", "date"))
+def technical_aroon(**kwargs) -> Tuple[OpenBBFigure, Dict[str, Any]]:
+    """Technical Aroon Chart."""
+
+    if "data" in kwargs and isinstance(kwargs["data"], pd.DataFrame):
+        data = kwargs["data"]
+    else:
+        data = basemodel_to_df(
+            kwargs["obbject_item"], index=kwargs.get("index", "date")
+        )
+
+    if "date" in data.columns:
+        data = data.set_index("date")
+
+    if "symbol" in data.columns and len(data.symbol.unique()) > 1:
+        raise ValueError(
+            "Please provide data with only one symbol and columns for OHLC."
+        )
+
+    symbol = kwargs.get("symbol", "")
+
+    volume = kwargs.get("volume") is True
+    title = f"Aroon Indicator & Oscillator {symbol}"
+
     length = kwargs.get("length", 25)
     scalar = kwargs.get("scalar", 100)
     symbol = kwargs.get("symbol", "")
@@ -88,51 +641,73 @@ def technical_aroon(**kwargs) -> Tuple["OpenBBFigure", Dict[str, Any]]:
     fig = ta.plot(
         data,
         dict(aroon=dict(length=length, scalar=scalar)),
-        f"Aroon on {symbol}",
+        title,
         False,
-        volume=False,
+        volume=volume,
     )
+
     content = fig.show(external=True).to_plotly_json()
 
     return fig, content
 
 
-def technical_sma(**kwargs) -> Tuple["OpenBBFigure", Dict[str, Any]]:
-    """Plot simple moving average chart."""
-    ma_type = "sma"
-    return _ta_ma(ma_type, **kwargs)
-
-
-def technical_macd(**kwargs) -> Tuple["OpenBBFigure", Dict[str, Any]]:
+def technical_macd(**kwargs) -> Tuple[OpenBBFigure, Dict[str, Any]]:
     """Plot moving average convergence divergence chart."""
-    data = basemodel_to_df(kwargs["obbject_item"], index=kwargs.get("index", "date"))
+
+    if "data" in kwargs and isinstance(kwargs["data"], pd.DataFrame):
+        data = kwargs["data"]
+    else:
+        data = basemodel_to_df(
+            kwargs["obbject_item"], index=kwargs.get("index", "date")
+        )
+
+    if "date" in data.columns:
+        data = data.set_index("date")
+
+    if "symbol" in data.columns and len(data.symbol.unique()) > 1:
+        raise ValueError(
+            "Please provide data with only one symbol and columns for OHLC."
+        )
+
     fast = kwargs.get("fast", 12)
     slow = kwargs.get("slow", 26)
     signal = kwargs.get("signal", 9)
     symbol = kwargs.get("symbol", "")
 
+    title = f"{symbol.upper()} MACD"
+    volume = kwargs.get("volume") is True
+
     ta = PlotlyTA()
     fig = ta.plot(
         data,
         dict(macd=dict(fast=fast, slow=slow, signal=signal)),
-        f"{symbol.upper()} MACD",
+        title,
         False,
-        volume=False,
+        volume=volume,
     )
     content = fig.show(external=True).to_plotly_json()
 
     return fig, content
 
 
-def technical_hma(**kwargs) -> Tuple["OpenBBFigure", Dict[str, Any]]:
-    """Hull moving average chart."""
-    ma_type = "hma"
-    return _ta_ma(ma_type, **kwargs)
-
-
-def technical_adx(**kwargs) -> Tuple["OpenBBFigure", Dict[str, Any]]:
+def technical_adx(**kwargs) -> Tuple[OpenBBFigure, Dict[str, Any]]:
     """Average directional movement index chart."""
-    data = basemodel_to_df(kwargs["obbject_item"], index=kwargs.get("index", "date"))
+
+    if "data" in kwargs and isinstance(kwargs["data"], pd.DataFrame):
+        data = kwargs["data"]
+    else:
+        data = basemodel_to_df(
+            kwargs["obbject_item"], index=kwargs.get("index", "date")
+        )
+
+    if "date" in data.columns:
+        data = data.set_index("date")
+
+    if "symbol" in data.columns and len(data.symbol.unique()) > 1:
+        raise ValueError(
+            "Please provide data with only one symbol and columns for OHLC."
+        )
+
     length = kwargs.get("length", 14)
     scalar = kwargs.get("scalar", 100.0)
     drift = kwargs.get("drift", 1)
@@ -151,15 +726,24 @@ def technical_adx(**kwargs) -> Tuple["OpenBBFigure", Dict[str, Any]]:
     return fig, content
 
 
-def technical_wma(**kwargs) -> Tuple["OpenBBFigure", Dict[str, Any]]:
-    """Weighted moving average chart."""
-    ma_type = "wma"
-    return _ta_ma(ma_type, **kwargs)
-
-
-def technical_rsi(**kwargs) -> Tuple["OpenBBFigure", Dict[str, Any]]:
+def technical_rsi(**kwargs) -> Tuple[OpenBBFigure, Dict[str, Any]]:
     """Relative strength index chart."""
-    data = basemodel_to_df(kwargs["obbject_item"], index=kwargs.get("index", "date"))
+
+    if "data" in kwargs and isinstance(kwargs["data"], pd.DataFrame):
+        data = kwargs["data"]
+    else:
+        data = basemodel_to_df(
+            kwargs["obbject_item"], index=kwargs.get("index", "date")
+        )
+
+    if "date" in data.columns:
+        data = data.set_index("date")
+
+    if "symbol" in data.columns and len(data.symbol.unique()) > 1:
+        raise ValueError(
+            "Please provide data with only one symbol and columns for OHLC."
+        )
+
     window = kwargs.get("window", 14)
     scalar = kwargs.get("scalar", 100.0)
     drift = kwargs.get("drift", 1)
@@ -178,15 +762,9 @@ def technical_rsi(**kwargs) -> Tuple["OpenBBFigure", Dict[str, Any]]:
     return fig, content
 
 
-def technical_ema(**kwargs) -> Tuple["OpenBBFigure", Dict[str, Any]]:
-    """Exponential moving average chart."""
-    ma_type = "ema"
-    return _ta_ma(ma_type, **kwargs)
-
-
 def technical_cones(
-    **kwargs: TechnicalConesChartQueryParams,
-) -> Tuple["OpenBBFigure", Dict[str, Any]]:
+    **kwargs: Union[Any, TechnicalConesChartQueryParams],
+) -> Tuple[OpenBBFigure, Dict[str, Any]]:
     """Volatility Cones Chart."""
     data = kwargs.get("data")
 
@@ -264,6 +842,11 @@ def technical_cones(
         ),
         yaxis=dict(
             ticklen=0,
+            showgrid=True,
+            showline=True,
+            mirror=True,
+            zeroline=False,
+            gridcolor="rgba(128,128,128,0.3)",
         ),
         xaxis=dict(
             type="category",
@@ -273,6 +856,8 @@ def technical_cones(
             ticktext=df_ta.index,
             title_text="Period",
             showgrid=False,
+            showline=True,
+            mirror=True,
             zeroline=False,
         ),
         margin=dict(l=20, r=20, b=20),
@@ -285,8 +870,8 @@ def technical_cones(
 
 
 def economy_fred_series(
-    **kwargs: Union[Any, FredSeriesChartQueryParams],
-) -> Tuple["OpenBBFigure", Dict[str, Any]]:
+    **kwargs: Union[Any, EconomyFredSeriesChartQueryParams],
+) -> Tuple[OpenBBFigure, Dict[str, Any]]:
     """FRED Series Chart."""
     ytitle_dict = {
         "chg": "Change",
@@ -298,20 +883,6 @@ def economy_fred_series(
         "cca": "Continuously Compounded Annual Rate Of Change",
         "log": "Natural Log",
     }
-
-    colors = [
-        "#1f77b4",
-        "#7f7f7f",
-        "#ff7f0e",
-        "#2ca02c",
-        "#d62728",
-        "#9467bd",
-        "#8c564b",
-        "#e377c2",
-        "#7f7f7f",
-        "#bcbd22",
-        "#17becf",
-    ]
 
     provider = kwargs.get("provider")
 
@@ -357,16 +928,10 @@ def economy_fred_series(
 
     columns = df_ta.columns.to_list()
 
-    def z_score_standardization(data: pd.Series) -> pd.Series:
-        """Z-Score Standardization Method."""
-        return (data - data.mean()) / data.std()
-
     if normalize:
         df_ta = df_ta.apply(z_score_standardization)
 
-    # Extract the metadata from the warnings.
-    warnings = kwargs.get("warnings")
-    metadata = json.loads(warnings[0].message) if warnings else {}  # type: ignore
+    metadata = kwargs.get("metadata", {})
 
     # Check if the request was transformed by the FRED API.
     params = kwargs["extra_params"] if kwargs.get("extra_params") else {}
@@ -374,6 +939,8 @@ def economy_fred_series(
 
     # Get a unique list of all units of measurement in the DataFrame.
     y_units = list({metadata.get(col).get("units") for col in columns if col in metadata})  # type: ignore
+    if has_params is True and not y_units:
+        y_units = [ytitle_dict.get(params.transform)]  # type: ignore
 
     if len(y_units) > 2 and has_params is False and allow_unsafe is True:
         raise RuntimeError(
@@ -414,8 +981,6 @@ def economy_fred_series(
     fig = OpenBBFigure().create_subplots(
         rows=1, cols=1, shared_xaxes=True, shared_yaxes=False
     )
-    fig.update_layout(ChartStyle().plotly_template.get("layout", {}))
-    text_color = "black" if ChartStyle().plt_style == "light" else "white"
 
     # For each series in the DataFrame, add a scatter plot.
     for i, col in enumerate(df_ta.columns):
@@ -425,12 +990,14 @@ def economy_fred_series(
             (
                 metadata.get(col).get("units") == y1_units
                 or y2title is None  # type: ignore
+                or kwargs.get("same_axis") is True
             )
             if metadata.get(col)
             else False
         )
         if normalize:
             on_y1 = True
+
         yaxes = "y2" if not on_y1 else "y1"
         on_y3 = not metadata.get(col) and normalize is False
         if on_y3:
@@ -442,8 +1009,8 @@ def economy_fred_series(
             name=df_ta[col].name,
             mode="lines",
             hovertemplate=f"{df_ta[col].name}: %{{y}}<extra></extra>",
-            line=dict(width=1, color=colors[i % len(colors)]),
-            yaxis=yaxes,
+            line=dict(width=1, color=LARGE_CYCLER[i % len(LARGE_CYCLER)]),
+            yaxis="y1" if kwargs.get("same_axis") is True else yaxes,
         )
 
     # Set the y-axis titles, if supplied.
@@ -466,22 +1033,25 @@ def economy_fred_series(
         title=dict(text=title, x=0.5, font=dict(size=16)),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(color=text_color),
         legend=dict(
             orientation="h",
             yanchor="bottom",
             xanchor="right",
             y=1.02,
-            x=1,
+            x=0.95,
             bgcolor="rgba(0,0,0,0)",
+            font=dict(size=12),
         ),
         yaxis=(
             dict(
                 ticklen=0,
                 side="right",
-                title=dict(text=y1title, standoff=30, font=dict(size=18)),
+                showline=True,
+                mirror=True,
+                title=dict(text=y1title, standoff=30, font=dict(size=16)),
                 tickfont=dict(size=14),
                 anchor="x",
+                gridcolor="rgba(128,128,128,0.3)",
             )
             if y1title
             else None
@@ -493,7 +1063,7 @@ def economy_fred_series(
                 ticklen=0,
                 showgrid=False,
                 title=dict(
-                    text=y2title if y2title else None, standoff=10, font=dict(size=18)
+                    text=y2title if y2title else None, standoff=10, font=dict(size=16)
                 ),
                 tickfont=dict(size=14),
                 anchor="x",
@@ -514,7 +1084,7 @@ def economy_fred_series(
                     if y3title
                     else None
                 ),
-                tickfont=dict(size=12, color="rgba(128,128,128,0.75)"),
+                tickfont=dict(size=12, color="rgba(128,128,128,0.9)"),
                 anchor="free",
             )
             if y3title
@@ -522,10 +1092,13 @@ def economy_fred_series(
         ),
         xaxis=dict(
             ticklen=0,
-            showgrid=False,
+            showgrid=True,
+            showline=True,
+            mirror=True,
             title=(
-                dict(text=xtitle, standoff=30, font=dict(size=18)) if xtitle else None
+                dict(text=xtitle, standoff=30, font=dict(size=16)) if xtitle else None
             ),
+            gridcolor="rgba(128,128,128,0.3)",
             domain=[0.095, 0.95] if y3title else None,
         ),
         margin=dict(r=25, l=25) if normalize is False else None,
