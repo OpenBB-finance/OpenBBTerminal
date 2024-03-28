@@ -2,20 +2,17 @@
 
 __docformat__ = "numpy"
 
-from typing import Iterable, List, Optional, Tuple, Union
+from typing import Dict, Iterable, List, Optional, Tuple, Union
 
 import i18n
+from openbb import obb
 from rich import panel
 from rich.console import Console, Theme
 from rich.progress import track
 from rich.text import Text
 
-from openbb_terminal.core.plots.plotly_helper import theme
-from openbb_terminal.core.session.current_system import get_current_system
-from openbb_terminal.core.session.current_user import get_current_user
-
-# pylint: disable=no-member,c-extension-no-member
-
+from openbb_terminal.core.plots.terminal_style import theme
+from openbb_terminal.core.session.current_settings import get_current_settings
 
 # https://rich.readthedocs.io/en/stable/appendix/colors.html#appendix-colors
 # https://rich.readthedocs.io/en/latest/highlighting.html#custom-highlighters
@@ -54,15 +51,22 @@ def get_ordered_list_sources(command_path: str) -> List:
     Parameters
     ----------
     command_path: str
-        The command to find the source for. E.g. "stocks/load
+        The command to find the source for. E.g. "/equity/price/historical
 
     Returns
     -------
     List
         The list of sources for the given command.
     """
-    command_path = command_path[1:] if command_path.startswith("/") else command_path
-    return get_current_user().sources.choices.get(command_path, [])
+    reference: Dict[str, Dict] = {}
+    if coverage := getattr(obb, "coverage", None):
+        reference = getattr(coverage, "reference", {})
+
+    command_reference = reference.get(command_path, {})
+    if command_reference:
+        providers = list(command_reference["parameters"].keys())
+        return [provider for provider in providers if provider != "standard"]
+    return []
 
 
 class MenuText:
@@ -132,7 +136,9 @@ class MenuText:
         )
         self.menu_text += f"[param]{parameter_translated}{space}:[/param] {value}\n"
 
-    def add_cmd(self, key_command: str, condition: bool = True):
+    def add_cmd(
+        self, key_command: str, condition: bool = True, command_description: str = ""
+    ):
         """Append command text (after translation from key) to a menu
 
         Parameters
@@ -144,12 +150,17 @@ class MenuText:
             If condition is false, the command line is greyed out.
         """
         spacing = (23 - (len(key_command) + 4)) * " "
-        if condition:
-            cmd = f"[cmds]    {key_command}{spacing}{i18n.t(self.menu_path + key_command)}[/cmds]"
-        else:
-            cmd = f"[unvl]    {key_command}{spacing}{i18n.t(self.menu_path + key_command)}[/unvl]"
 
-        sources = get_ordered_list_sources(f"/{self.menu_path}{key_command}")
+        if command_description:
+            cmd = f"{key_command}{spacing}{command_description}"
+        else:
+            command_description = i18n.t(self.menu_path + key_command)
+            if command_description == self.menu_path + key_command:
+                command_description = ""
+            cmd = f"{key_command}{spacing}{command_description}"
+        cmd = f"[cmds]    {cmd}[/cmds]" if condition else f"[unvl]    {cmd}[/unvl]"
+
+        sources = get_ordered_list_sources(f"{self.menu_path}{key_command}")
 
         if sources:
             space = (self.col_src - len(cmd)) * " " if self.col_src > len(cmd) else " "
@@ -157,7 +168,12 @@ class MenuText:
 
         self.menu_text += cmd + "\n"
 
-    def add_menu(self, key_menu: str, condition: Optional[Union[bool, str]] = True):
+    def add_menu(
+        self,
+        key_menu: str,
+        condition: Optional[Union[bool, str]] = True,
+        menu_description: str = "",
+    ):
         """Append menu text (after translation from key) to a menu
 
         Parameters
@@ -169,10 +185,19 @@ class MenuText:
             If condition is false, the menu line is greyed out.
         """
         spacing = (23 - (len(key_menu) + 4)) * " "
-        if condition:
-            self.menu_text += f"[menu]>   {key_menu}{spacing}{i18n.t(self.menu_path + key_menu)}[/menu]\n"
+
+        if menu_description:
+            menu = f"{key_menu}{spacing}{menu_description}"
         else:
-            self.menu_text += f"[unvl]>   {key_menu}{spacing}{i18n.t(self.menu_path + key_menu)}[/unvl]\n"
+            menu_description = i18n.t(self.menu_path + key_menu)
+            if menu_description == self.menu_path + key_menu:
+                menu_description = ""
+            menu = f"{key_menu}{spacing}{menu_description}"
+
+        if condition:
+            self.menu_text += f"[menu]>   {menu}[/menu]\n"
+        else:
+            self.menu_text += f"[unvl]>   {menu}[/unvl]\n"
 
     def add_setting(self, key_setting: str, status: bool = True):
         """Append menu text (after translation from key) to a menu
@@ -195,7 +220,7 @@ class ConsoleAndPanel:
     """Create a rich console to wrap the console print with a Panel"""
 
     def __init__(self):
-        self.preferences = get_current_user().preferences
+        self.preferences = get_current_settings()
         self.__console = Console(
             theme=Theme(theme.console_style), highlight=False, soft_wrap=True
         )
@@ -203,13 +228,11 @@ class ConsoleAndPanel:
         self.menu_path = ""
 
     def reload_console(self):
-        current_preferences = get_current_user().preferences
-        if current_preferences != self.preferences:
-            self.preferences = current_preferences
-            theme.apply_console_style(current_preferences.RICH_STYLE)
-            self.__console = Console(
-                theme=Theme(theme.console_style), highlight=False, soft_wrap=True
-            )
+        self.preferences = get_current_settings()
+        theme.apply_console_style(self.preferences.RICH_STYLE)
+        self.__console = Console(
+            theme=Theme(theme.console_style), highlight=False, soft_wrap=True
+        )
 
     def capture(self):
         return self.__console.capture()
@@ -241,15 +264,16 @@ class ConsoleAndPanel:
 
     def print(self, *args, **kwargs):
         self.reload_console()
-        current_user = get_current_user()
         if kwargs and "text" in list(kwargs) and "menu" in list(kwargs):
-            if not get_current_system().TEST_MODE:
-                if current_user.preferences.ENABLE_RICH_PANEL:
-                    if current_user.preferences.SHOW_VERSION:
-                        version = get_current_system().VERSION
-                        version = f"[param]OpenBB Terminal v{version}[/param] (https://openbb.co)"
+            if not get_current_settings().TEST_MODE:
+                if get_current_settings().ENABLE_RICH_PANEL:
+                    if get_current_settings().SHOW_VERSION:
+                        version = get_current_settings().VERSION
+                        version = f"[param]OpenBB Platform CLI v{version}[/param] (https://openbb.co)"
                     else:
-                        version = "[param]OpenBB Terminal[/param] (https://openbb.co)"
+                        version = (
+                            "[param]OpenBB Platform CLI[/param] (https://openbb.co)"
+                        )
                     self.__console.print(
                         panel.Panel(
                             "\n" + kwargs["text"],
@@ -263,7 +287,7 @@ class ConsoleAndPanel:
                     self.__console.print(kwargs["text"])
             else:
                 print(self.filter_rich_tags(kwargs["text"]))  # noqa: T201
-        elif not get_current_system().TEST_MODE:
+        elif not get_current_settings().TEST_MODE:
             self.__console.print(*args, **kwargs)
         else:
             print(*args, **kwargs)  # noqa: T201

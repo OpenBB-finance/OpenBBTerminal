@@ -20,10 +20,9 @@ from _pytest.mark.structures import Mark
 # IMPORTS INTERNAL
 from openbb_terminal import (
     config_terminal,
-    decorators,
     helper_funcs,
 )
-from openbb_terminal.core.session.current_system import set_system_variable
+from openbb_terminal.core.session.current_settings import set_settings
 
 # pylint: disable=redefined-outer-name
 
@@ -37,8 +36,8 @@ EXTENSIONS_MATCHING: Dict[str, List[Type]] = {
     "txt": [str],
 }
 
-set_system_variable("TEST_MODE", True)
-set_system_variable("LOG_COLLECT", False)
+set_settings("TEST_MODE", True)
+set_settings("LOG_COLLECT", False)
 
 
 class Record:
@@ -364,12 +363,8 @@ def disable_matplotlib():
     matplotlib.use("Agg")
 
 
-def disable_check_api():
-    decorators.disable_check_api()
-
-
 def enable_debug():
-    set_system_variable("DEBUG_MODE", True)
+    set_settings("DEBUG_MODE", True)
 
 
 def pytest_configure(config: Config) -> None:
@@ -378,7 +373,6 @@ def pytest_configure(config: Config) -> None:
     brotli_check()
     enable_debug()
     disable_rich()
-    disable_check_api()
     disable_matplotlib()
 
 

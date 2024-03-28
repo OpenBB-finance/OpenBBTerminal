@@ -2,19 +2,20 @@ from argparse import SUPPRESS, ArgumentParser
 from contextlib import contextmanager
 from inspect import isfunction, unwrap
 from types import MethodType
-from typing import Callable, List
+from typing import Callable, List, Literal
 from unittest.mock import patch
 
-from openbb_terminal.core.session.current_system import get_current_system
+from openbb_terminal.core.session.current_settings import get_current_settings
 from openbb_terminal.helper_funcs import check_file_type_saved, check_positive
-from openbb_terminal.rich_config import get_ordered_list_sources
 
 
 def __mock_parse_known_args_and_warn(
     controller,
     parser: ArgumentParser,
     other_args: List[str],
-    export_allowed: int = 0,
+    export_allowed: Literal[
+        "no_export", "raw_data_only", "figures_only", "raw_data_and_figures"
+    ] = "no_export",
     raw: bool = False,
     limit: int = 0,
 ) -> None:
@@ -27,9 +28,8 @@ def __mock_parse_known_args_and_warn(
         Parser with predefined arguments
     other_args: List[str]
         list of arguments to parse
-    export_allowed: int
-        Choose from 0, 1,
-        2 and EXPORT_BOTH_RAW_DATA_AND_FIGURES
+    export_allowed: Literal["no_export", "raw_data_only", "figures_only", "raw_data_and_figures"]
+            Export options
     raw: bool
         Add the --raw flag
     limit: int
@@ -37,17 +37,19 @@ def __mock_parse_known_args_and_warn(
     """
 
     _ = other_args
+
     parser.add_argument(
         "-h", "--help", action="store_true", help="show this help message"
     )
-    if export_allowed > 0:
+
+    if export_allowed != "no_export":
         choices_export = []
         help_export = "Does not export!"
 
-        if export_allowed == 1:
+        if export_allowed == "raw_data_only":
             choices_export = ["csv", "json", "xlsx"]
             help_export = "Export raw data into csv, json, xlsx"
-        elif export_allowed == 2:
+        elif export_allowed == "figures_only":
             choices_export = ["png", "jpg", "pdf", "svg"]
             help_export = "Export figure into png, jpg, pdf, svg "
         else:
@@ -79,17 +81,6 @@ def __mock_parse_known_args_and_warn(
             default=limit,
             help="Number of entries to show in data.",
             type=check_positive,
-        )
-    sources = get_ordered_list_sources(f"{controller.PATH}{parser.prog}")
-    # Allow to change source if there is more than one
-    if len(sources) > 1:
-        parser.add_argument(
-            "--source",
-            action="store",
-            dest="source",
-            choices=sources,
-            default=sources[0],  # the first source from the list is the default
-            help="Data source to select from",
         )
 
 
@@ -206,7 +197,7 @@ def __patch_controller_functions(controller):
         ),
     ]
 
-    if not get_current_system().DEBUG_MODE:
+    if not get_current_settings().DEBUG_MODE:
         rich.start()
     patched_function_list = []
     for patcher in patcher_list:
@@ -214,7 +205,7 @@ def __patch_controller_functions(controller):
 
     yield patched_function_list
 
-    if not get_current_system().DEBUG_MODE:
+    if not get_current_settings().DEBUG_MODE:
         rich.stop()
     for patcher in patcher_list:
         patcher.stop()
@@ -259,8 +250,10 @@ def _get_argument_parser(
         for patched_function in patched_function_list:
             call_count += patched_function.call_count
             if patched_function.call_count == 1:
-                args = patched_function.call_args.args
-                argument_parser = args[0]
+                args, kwargs = patched_function.call_args
+                argument_parser = (
+                    kwargs["parser"] if kwargs.get("parser", None) else args[0]
+                )
 
         if call_count != 1:
             raise AssertionError(
@@ -300,9 +293,6 @@ def _build_command_choice_map(argument_parser: ArgumentParser) -> dict:
 def build_controller_choice_map(controller) -> dict:
     command_list = controller.CHOICES_COMMANDS
     controller_choice_map: dict = {c: {} for c in controller.controller_choices}
-    controller_choice_map["support"] = controller.SUPPORT_CHOICES
-    controller_choice_map["about"] = controller.ABOUT_CHOICES
-    controller_choice_map["hold"] = controller.HELP_CHOICES
 
     for command in command_list:
         try:
@@ -314,7 +304,7 @@ def build_controller_choice_map(controller) -> dict:
                 argument_parser=argument_parser
             )
         except Exception as exception:
-            if get_current_system().DEBUG_MODE:
+            if get_current_settings().DEBUG_MODE:
                 raise Exception(
                     f"On command : `{command}`.\n{str(exception)}"
                 ) from exception

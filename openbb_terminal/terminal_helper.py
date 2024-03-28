@@ -2,47 +2,31 @@
 
 __docformat__ = "numpy"
 
-import hashlib
-import logging
 import os
 import sys
-import webbrowser
-
-# IMPORTATION STANDARD
 from contextlib import contextmanager
-from typing import Any, Dict, List, Optional
+from pathlib import Path
+from typing import List, Optional
 
-import matplotlib.pyplot as plt
-
-# IMPORTATION THIRDPARTY
 from packaging import version
 
-# IMPORTATION INTERNAL
 import openbb_terminal.core.session.local_model as Local
-from openbb_terminal import thought_of_the_day as thought
 from openbb_terminal.base_helpers import load_env_files
-from openbb_terminal.core.config.paths import HIST_FILE_PATH, SETTINGS_ENV_FILE
-from openbb_terminal.core.plots.backend import plots_backend
+from openbb_terminal.core.config.paths import SETTINGS_ENV_FILE
 from openbb_terminal.core.session.constants import BackendEnvironment
-from openbb_terminal.core.session.current_system import get_current_system
+from openbb_terminal.core.session.current_settings import (
+    get_current_settings,
+    set_settings,
+)
 from openbb_terminal.core.session.current_user import (
-    get_current_user,
+    get_platform_user,
     is_local,
-    set_preference,
 )
 from openbb_terminal.core.session.env_handler import write_to_dotenv
 from openbb_terminal.helper_funcs import request
 from openbb_terminal.rich_config import console
 
 # pylint: disable=too-many-statements,no-member,too-many-branches,C0302
-
-try:
-    __import__("git")
-except ImportError:
-    WITH_GIT = False
-else:
-    WITH_GIT = True
-logger = logging.getLogger(__name__)
 
 
 def print_goodbye():
@@ -59,7 +43,7 @@ def print_goodbye():
     # "...when offered a flight to the moon, nobody asks about what seat."
 
     text = """
-[param]Thank you for using the OpenBB Terminal and being part of this journey.[/param]
+[param]Thank you for using the OpenBB Platform CLI and being part of this journey.[/param]
 
 We hope you'll find the new CLI as valuable as this. To stay tuned, sign up for our newsletter: [cmds]https://openbb.co/newsletter.[/]
 
@@ -70,130 +54,6 @@ In the meantime, check out our other products:
 [bold]OpenBB Bot[/]:          [cmds]https://openbb.co/products/bot[/cmds]
     """
     console.print(text)
-    logger.info("END")
-
-
-def sha256sum(filename):
-    h = hashlib.sha256()
-    b = bytearray(128 * 1024)
-    mv = memoryview(b)
-    with open(filename, "rb", buffering=0) as f:
-        for n in iter(lambda: f.readinto(mv), 0):
-            h.update(mv[:n])
-    return h.hexdigest()
-
-
-def open_openbb_documentation(  # noqa: PLR0912
-    path,
-    url="https://docs.openbb.co/terminal",
-    command=None,
-    arg_type="",
-):
-    """Opens the documentation page based on your current location within the terminal. Make exceptions for menus
-    that are considered 'common' by adjusting the path accordingly."""
-    if path == "/" and command is None:
-        path = "/usage/overview/structure-and-navigation"
-        command = ""
-    elif "keys" in path:
-        path = "/usage/data/api-keys"
-        command = ""
-    elif "settings" in path:
-        path = "/usage/overview/customizing-the-terminal"
-        command = ""
-    elif "featflags" in path:
-        path = "/usage/overview/customizing-the-terminal#feature-flags-menu"
-        command = ""
-    elif "sources" in path:
-        path = "/usage/usage/data/data-sources"
-        command = ""
-    elif "account" in path:
-        path = "/usage/hub"
-        command = ""
-    elif arg_type == "command":  # user passed a command name
-        if command in ["settings", "featflags"]:
-            path = "/usage/overview/customizing-the-terminal"
-            command = ""
-        else:
-            path = f"/reference/{path}"
-    elif "askobb" in path:
-        path = "/usage/askobb-feature"
-        command = ""
-    elif arg_type == "menu":  # user passed a menu name
-        if command in ["ta", "qa"]:
-            menu = path.split("/")[-2]
-            path = f"/menus/common/{menu}"
-        elif command == "stocks":
-            path = "/menus/stocks/introduction"
-            command = ""
-        elif command == "forecast":
-            command = ""
-            path = "/menus/forecast"
-        elif command == "crypto":
-            path = "/menus/crypto/introduction"
-            command = ""
-
-        else:
-            path = f"/menus/{path}"
-    else:  # user didn't pass argument and is in a menu
-        menu = path.split("/")[-2]
-        if menu == "crypto" and not command:
-            path = "/crypto/introduction"
-        if menu == "stocks":
-            path = "/stocks/introduction"
-        path = f"/menus/common/{menu}" if menu in ["ta", "qa"] else f"/menus/{path}"
-
-    if command:
-        if command == "keys":
-            path = "/usage/data/api-keys"
-            command = ""
-        elif "settings" in path or "featflags" in path:
-            path = "/usage/overview/customizing-the-terminal"
-            command = ""
-        elif "sources" in path:
-            path = "/usage/data/data-sources"
-            command = ""
-        elif command in ["record", "stop", "exe"]:
-            path = "/usage/routines/introduction-to-routines"
-            command = ""
-        elif command == "sources":
-            path = "/usage/data/data-sources"
-            command = ""
-        elif command == "askobb":
-            path = "/usage/askobb-feature"
-            command = ""
-        elif command == "news":
-            path = "/usage/overview/commands-and-arguments#help-arguments"
-            command = ""
-        elif command in [
-            "intro",
-            "about",
-            "support",
-            "survey",
-            "update",
-            "wiki",
-        ]:
-            path = "/usage"
-            command = ""
-        elif command in ["ta", "qa"]:
-            path = f"/menus/common/{command}"
-            command = ""
-        elif command == "stocks":
-            path = "/menus/stocks/introduction"
-            command = ""
-        elif command == "account":
-            path = "/usage/hub"
-            command = ""
-        elif command == "news":
-            path = "/usage/overview/commands-and-arguments#help-arguments"
-            command = ""
-        path += command
-
-    full_url = f"{url}{path.replace('//', '/')}"
-
-    if full_url[-1] == "/":
-        full_url = full_url[:-1]
-
-    webbrowser.open(full_url)
 
 
 def hide_splashscreen():
@@ -211,19 +71,7 @@ def hide_splashscreen():
         pyi_splash.update_text("Terminal Loaded!")
         pyi_splash.close()
     except Exception as e:
-        logger.info(e)
-
-
-def is_auth_enabled() -> bool:
-    """Tell whether or not authentication is enabled.
-
-    Returns
-    -------
-    bool
-        If authentication is enabled
-    """
-    # TODO: This function is a temporary way to block authentication
-    return get_current_system().ENABLE_AUTHENTICATION
+        console.print(f"Error: Unable to hide splashscreen: {e}")
 
 
 def print_guest_block_msg():
@@ -257,7 +105,6 @@ def bootup():
             # pylint: disable=E1101
             sys.stdout.reconfigure(encoding="utf-8")
     except Exception as e:
-        logger.exception("Exception: %s", str(e))
         console.print(e, "\n")
 
 
@@ -275,10 +122,10 @@ def check_for_updates() -> None:
     except Exception:
         r = None
 
-    if r is not None and r.status_code == 200:
+    if r and r.status_code == 200:
         latest_tag_name = r.json()["tag_name"]
         latest_version = version.parse(latest_tag_name)
-        current_version = version.parse(get_current_system().VERSION)
+        current_version = version.parse(get_current_settings().VERSION)
 
         if check_valid_versions(latest_version, current_version):
             if current_version == latest_version:
@@ -326,43 +173,24 @@ def welcome_message():
 
     Prints first welcome message, help and a notification if updates are available.
     """
-    console.print(f"\nWelcome to OpenBB Terminal v{get_current_system().VERSION}")
-
-    if get_current_user().preferences.ENABLE_THOUGHTS_DAY:
-        console.print("---------------------------------")
-        try:
-            thought.get_thought_of_the_day()
-        except Exception as e:
-            logger.exception("Exception: %s", str(e))
-            console.print(e)
+    console.print(f"\nWelcome to OpenBB Platform CLI v{get_current_settings().VERSION}")
 
 
 def reset(queue: Optional[List[str]] = None):
-    """Resets the terminal.  Allows for checking code without quitting"""
+    """Resets the CLI.  Allows for checking code without quitting"""
     console.print("resetting...")
-    logger.info("resetting")
-    plt.close("all")
-    plots_backend().close(reset=True)
     load_env_files()
-    debug = get_current_system().DEBUG_MODE
-    dev = get_current_system().DEV_BACKEND
+    debug = get_current_settings().DEBUG_MODE
+    dev = get_current_settings().DEV_BACKEND
 
     try:
-        # save the current user
-        user_profile = get_current_user().profile
-        session: Dict[str, Any] = {
-            "access_token": user_profile.token,
-            "token_type": user_profile.token_type,
-            "uuid": user_profile.uuid,
-            "username": user_profile.username,
-            "remember": user_profile.remember,
-        }
-
         # remove the hub routines
         if not is_local():
-            Local.remove(get_current_user().preferences.USER_ROUTINES_DIRECTORY / "hub")
-            if not get_current_user().profile.remember:
-                Local.remove(HIST_FILE_PATH)
+            user = get_platform_user()
+            Local.remove(Path(user.preferences.export_directory, "routines", "hub"))
+
+            # if not get_current_user().profile.remember:
+            #     Local.remove(HIST_FILE_PATH)
 
         # we clear all openbb_terminal modules from sys.modules
         for module in list(sys.modules.keys()):
@@ -380,11 +208,10 @@ def reset(queue: Optional[List[str]] = None):
         else:
             from openbb_terminal.core.session import session_controller
 
-            session_controller.main(session, queue=queue_list)
+            session_controller.launch_terminal(queue=queue_list)
 
     except Exception as e:
-        logger.exception("Exception: %s", str(e))
-        console.print("Unfortunately, resetting wasn't possible!\n")
+        console.print(f"Unfortunately, resetting wasn't possible: {e}\n")
         print_goodbye()
 
 
@@ -412,7 +239,7 @@ def first_time_user() -> bool:
         Whether or not the user is a first time user
     """
     if SETTINGS_ENV_FILE.stat().st_size == 0:
-        set_preference("PREVIOUS_USE", True)
+        set_settings("PREVIOUS_USE", True)
         write_to_dotenv("OPENBB_PREVIOUS_USE", "True")
         return True
     return False
