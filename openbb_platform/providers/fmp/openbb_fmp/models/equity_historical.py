@@ -43,6 +43,7 @@ class FMPEquityHistoricalQueryParams(EquityHistoricalQueryParams):
 class FMPEquityHistoricalData(EquityHistoricalData):
     """FMP Equity Historical Price Data."""
 
+    symbol: Optional[str] = Field(default=None, description="Symbol of the equity.")
     adj_close: Optional[float] = Field(
         default=None, description=DATA_DESCRIPTIONS.get("adj_close", "")
     )

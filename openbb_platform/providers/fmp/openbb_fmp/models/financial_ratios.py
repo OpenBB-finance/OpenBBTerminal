@@ -8,13 +8,16 @@ from openbb_core.provider.standard_models.financial_ratios import (
     FinancialRatiosData,
     FinancialRatiosQueryParams,
 )
-from openbb_core.provider.utils.descriptions import QUERY_DESCRIPTIONS
-from openbb_core.provider.utils.errors import EmptyDataError
+from openbb_core.provider.utils.descriptions import (
+    DATA_DESCRIPTIONS,
+    QUERY_DESCRIPTIONS,
+)
 from openbb_core.provider.utils.helpers import (
-    amake_request,
+    ClientResponse,
+    ClientSession,
+    amake_requests,
     to_snake_case,
 )
-from openbb_fmp.utils.helpers import response_callback
 from pydantic import Field, model_validator
 
 
@@ -24,8 +27,13 @@ class FMPFinancialRatiosQueryParams(FinancialRatiosQueryParams):
     Source: https://financialmodelingprep.com/developer/docs/#Company-Financial-Ratios
     """
 
+    __json_schema_extra__ = {"symbol": ["multiple_items_allowed"]}
+
     period: Literal["annual", "quarter", "ttm"] = Field(
         default="annual", description=QUERY_DESCRIPTIONS.get("period", "")
+    )
+    with_ttm: Optional[bool] = Field(
+        default=False, description="Include trailing twelve months (TTM) data."
     )
 
 
@@ -33,13 +41,19 @@ class FMPFinancialRatiosData(FinancialRatiosData):
     """FMP Financial Ratios Data."""
 
     __alias_dict__ = {
-        "dividend_yield_ttm": "dividend_yiel_ttm",
-        "dividend_yield_ttm_percent": "dividend_yiel_percentage_ttm",
         "period_ending": "date",
         "fiscal_period": "period",
         "fiscal_year": "calendar_year",
+        "dividend_yield": "dividend_yiel",
+        "cash_flow_coverage_ratio": "cash_flow_coverage_ratios",
+        "short_term_coverage_ratio": "short_term_coverage_ratios",
+        "cash_flow_to_debt": "cash_flow_to_debt_ratio",
+        "interest_coverage_ratio": "interest_coverage",
     }
 
+    symbol: Optional[str] = Field(
+        default=None, description=DATA_DESCRIPTIONS.get("symbol", "")
+    )
     current_ratio: Optional[float] = Field(default=None, description="Current ratio.")
     quick_ratio: Optional[float] = Field(default=None, description="Quick ratio.")
     cash_ratio: Optional[float] = Field(default=None, description="Cash ratio.")
@@ -59,28 +73,44 @@ class FMPFinancialRatiosData(FinancialRatiosData):
         default=None, description="Cash conversion cycle."
     )
     gross_profit_margin: Optional[float] = Field(
-        default=None, description="Gross profit margin."
+        default=None,
+        description="Gross profit margin.",
+        json_schema_extra={"x-unit_measurement": "percent", "x-frontend_multiply": 100},
     )
     operating_profit_margin: Optional[float] = Field(
-        default=None, description="Operating profit margin."
+        default=None,
+        description="Operating profit margin.",
+        json_schema_extra={"x-unit_measurement": "percent", "x-frontend_multiply": 100},
     )
     pretax_profit_margin: Optional[float] = Field(
-        default=None, description="Pretax profit margin."
+        default=None,
+        description="Pretax profit margin.",
+        json_schema_extra={"x-unit_measurement": "percent", "x-frontend_multiply": 100},
     )
     net_profit_margin: Optional[float] = Field(
-        default=None, description="Net profit margin."
+        default=None,
+        description="Net profit margin.",
+        json_schema_extra={"x-unit_measurement": "percent", "x-frontend_multiply": 100},
     )
     effective_tax_rate: Optional[float] = Field(
-        default=None, description="Effective tax rate."
+        default=None,
+        description="Effective tax rate.",
+        json_schema_extra={"x-unit_measurement": "percent", "x-frontend_multiply": 100},
     )
     return_on_assets: Optional[float] = Field(
-        default=None, description="Return on assets."
+        default=None,
+        description="Return on assets.",
+        json_schema_extra={"x-unit_measurement": "percent", "x-frontend_multiply": 100},
     )
     return_on_equity: Optional[float] = Field(
-        default=None, description="Return on equity."
+        default=None,
+        description="Return on equity.",
+        json_schema_extra={"x-unit_measurement": "percent", "x-frontend_multiply": 100},
     )
     return_on_capital_employed: Optional[float] = Field(
-        default=None, description="Return on capital employed."
+        default=None,
+        description="Return on capital employed.",
+        json_schema_extra={"x-unit_measurement": "percent", "x-frontend_multiply": 100},
     )
     net_income_per_ebt: Optional[float] = Field(
         default=None, description="Net income per EBT."
@@ -99,10 +129,10 @@ class FMPFinancialRatiosData(FinancialRatiosData):
     total_debt_to_capitalization: Optional[float] = Field(
         default=None, description="Total debt to capitalization."
     )
-    interest_coverage: Optional[float] = Field(
+    interest_coverage_ratio: Optional[float] = Field(
         default=None, description="Interest coverage."
     )
-    cash_flow_to_debt_ratio: Optional[float] = Field(
+    cash_flow_to_debt: Optional[float] = Field(
         default=None, description="Cash flow to debt ratio."
     )
     company_equity_multiplier: Optional[float] = Field(
@@ -135,20 +165,14 @@ class FMPFinancialRatiosData(FinancialRatiosData):
     free_cash_flow_operating_cash_flow_ratio: Optional[float] = Field(
         default=None, description="Free cash flow operating cash flow ratio."
     )
-    cash_flow_coverage_ratios: Optional[float] = Field(
-        default=None, description="Cash flow coverage ratios."
+    cash_flow_coverage_ratio: Optional[float] = Field(
+        default=None, description="Cash flow coverage ratio."
     )
-    short_term_coverage_ratios: Optional[float] = Field(
-        default=None, description="Short term coverage ratios."
+    short_term_coverage_ratio: Optional[float] = Field(
+        default=None, description="Short term coverage ratio."
     )
     capital_expenditure_coverage_ratio: Optional[float] = Field(
         default=None, description="Capital expenditure coverage ratio."
-    )
-    dividend_paid_and_capex_coverage_ratio: Optional[float] = Field(
-        default=None, description="Dividend paid and capex coverage ratio."
-    )
-    dividend_payout_ratio: Optional[float] = Field(
-        default=None, description="Dividend payout ratio."
     )
     price_book_value_ratio: Optional[float] = Field(
         default=None, description="Price book value ratio."
@@ -177,9 +201,16 @@ class FMPFinancialRatiosData(FinancialRatiosData):
     price_sales_ratio: Optional[float] = Field(
         default=None, description="Price sales ratio."
     )
-    dividend_yield: Optional[float] = Field(default=None, description="Dividend yield.")
-    dividend_yield_percentage: Optional[float] = Field(
-        default=None, description="Dividend yield percentage."
+    dividend_paid_and_capex_coverage_ratio: Optional[float] = Field(
+        default=None, description="Dividend paid and capex coverage ratio."
+    )
+    dividend_payout_ratio: Optional[float] = Field(
+        default=None, description="Dividend payout ratio."
+    )
+    dividend_yield: Optional[float] = Field(
+        default=None,
+        description="Dividend yield.",
+        json_schema_extra={"x-unit_measurement": "percent", "x-frontend_multiply": 100},
     )
     dividend_per_share: Optional[float] = Field(
         default=None, description="Dividend per share."
@@ -226,37 +257,56 @@ class FMPFinancialRatiosFetcher(
 
         base_url = "https://financialmodelingprep.com/api/v3"
 
-        ttm_url = f"{base_url}/ratios-ttm/{query.symbol}?&apikey={api_key}"
+        ttm_dict = {"period": "TTM", "date": datetime.now().strftime("%Y-%m-%d")}
 
-        url = (
-            f"{base_url}/ratios/{query.symbol}?"
-            f"period={query.period}&limit={query.limit}&apikey={api_key}"
-            if query.period != "ttm"
-            else ttm_url
+        include_ttm = query.period != "ttm" and query.with_ttm
+
+        async def response_callback(
+            response: ClientResponse, session: ClientSession
+        ) -> List[Dict]:
+            results: List[dict] = await response.json()  # type: ignore
+            symbol = response.url.parts[-1]
+
+            # TTM data
+            ttm_url = f"{base_url}/ratios-ttm/{symbol}?&apikey={api_key}"
+            if include_ttm and (ratios_ttm := await session.get_one(ttm_url)):
+                results.insert(
+                    0,
+                    {"symbol": symbol, **ttm_dict, **ratios_ttm},
+                )
+
+            if query.period == "ttm":
+                results = [{"symbol": symbol, **ttm_dict, **item} for item in results]
+
+            return results
+
+        endpoint = "ratios" if query.period != "ttm" else "ratios-ttm"
+
+        urls = [f"{base_url}/{endpoint}/{symbol}" for symbol in query.symbol.split(",")]
+
+        kwargs.update(
+            params={"period": query.period, "limit": query.limit, "apikey": api_key}
         )
-        results = await amake_request(
-            url, response_callback=response_callback, **kwargs
-        )
 
-        if not results:
-            raise EmptyDataError(f"No data found for the symbol {query.symbol}.")
-
-        return results  # type: ignore
+        return await amake_requests(urls, response_callback, **kwargs)
 
     @staticmethod
     def transform_data(
         query: FMPFinancialRatiosQueryParams, data: List[Dict], **kwargs: Any
     ) -> List[FMPFinancialRatiosData]:
         """Return the transformed data."""
-        results = [
-            {to_snake_case(k).replace("ttm", ""): v for k, v in item.items()}
-            for item in data
-        ]
-        if query.period == "ttm":
-            results[0].update(
-                {"period": "TTM", "date": datetime.now().date().strftime("%Y-%m-%d")}
-            )
-        for item in results:
-            item.pop("symbol", None)
-            item.pop("dividend_yiel_percentage", None)
-        return [FMPFinancialRatiosData.model_validate(d) for d in results]
+        results: List[FMPFinancialRatiosData] = []
+        for item in data:
+            new_item = {
+                to_snake_case(k).replace("_ttm", "").replace("ttm", ""): v
+                for k, v in item.items()
+            }
+            for col in ["dividend_yiel_percentage", "pe_ratio", "peg_ratio"]:
+                if col in new_item:
+                    _ = new_item.pop(col)
+            if len(query.symbol.split(",")) == 1:
+                new_item.pop("symbol", None)
+
+            results.append(FMPFinancialRatiosData.model_validate(new_item))
+
+        return results
