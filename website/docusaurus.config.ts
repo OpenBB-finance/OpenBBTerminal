@@ -65,8 +65,7 @@ export default {
       {
         docs: {
           sidebarPath: "./sidebars.js",
-          editUrl:
-            "https://github.com/OpenBB-finance/OpenBBTerminal/edit/main/website/",
+          editUrl: "https://github.com/OpenBB-finance/OpenBB/edit/main/website/",
           showLastUpdateTime: true,
           showLastUpdateAuthor: true,
           routeBasePath: "/",
